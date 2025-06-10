@@ -1,0 +1,65 @@
+.player-entry {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  color: white;
+  font-family: 'Arial', sans-serif;
+}
+
+.entry-container {
+  text-align: center;
+  max-width: 500px;
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.previous-message {
+  margin-bottom: 40px;
+}
+
+.previous-message h2 {
+  margin-bottom: 20px;
+  color: #4a90e2;
+}
+
+.previous-message p {
+  font-size: 18px;
+  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 20px;
+  border-radius: 10px;
+  border-left: 4px solid #4a90e2;
+}
+
+.name-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.name-form label {
+  font-size: 20px;
+  font-weight: bold;
+  color: #4a90e2;
+}
+
+.name-form input {
+  padding: 15px;
+  font-size: 18px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  text-align: center;
+}
+
+.name-form input:focus {
+  outline: none;
+  box-shadow: 0 0 20px rgba(74, 144, 226, 0.5);
+}

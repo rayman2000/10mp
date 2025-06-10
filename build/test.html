@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EmulatorJS Test</title>
+    <style>
+        body { margin: 0; padding: 20px; background: #333; color: white; font-family: Arial; }
+        #game { width: 100%; height: 400px; background: #000; }
+    </style>
+</head>
+<body>
+    <h1>EmulatorJS Direct Test</h1>
+    <div id="game"></div>
+    
+    <script>
+        window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+        window.EJS_player = '#game';
+        window.EJS_gameUrl = '/emulator/test.gba';
+        window.EJS_core = 'gba';
+        window.EJS_volume = 0.5;
+        window.EJS_color = '#4a90e2';
+        window.EJS_backgroundColor = '#1a1a2e';
+        console.log('EmulatorJS config set');
+    </script>
+    <script src="https://cdn.emulatorjs.org/stable/data/loader.js" onload="console.log('Loader script loaded')" onerror="console.error('Loader script failed')"></script>
+    
+    <script>
+        let checkCount = 0;
+        const maxChecks = 10;
+        
+        function checkEmulator() {
+            checkCount++;
+            console.log(`=== Check ${checkCount}/${maxChecks} ===`);
+            console.log('Available EJS functions:', Object.keys(window).filter(k => k.startsWith('EJS')));
+            console.log('Module available:', !!window.Module);
+            console.log('Game container content length:', document.getElementById('game').innerHTML.length);
+            console.log('Game container children:', document.getElementById('game').children.length);
+            
+            // Try manual initialization
+            if (window.EJS_GameManager && checkCount === 3) {
+                try {
+                    console.log('Trying manual GameManager...');
+                    const config = {
+                        element: document.getElementById('game'),
+                        gameUrl: '/emulator/test.gba',
+                        system: 'gba'
+                    };
+                    const emulator = new window.EJS_GameManager(config);
+                    console.log('✅ Manual emulator created!', emulator);
+                } catch (error) {
+                    console.error('❌ Manual emulator failed:', error);
+                }
+            }
+            
+            if (checkCount < maxChecks) {
+                setTimeout(checkEmulator, 2000);
+            }
+        }
+        
+        // Start checking after loader loads
+        setTimeout(checkEmulator, 1000);
+    </script>
+</body>
+</html>

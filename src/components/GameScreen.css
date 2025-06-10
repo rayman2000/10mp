@@ -1,0 +1,48 @@
+.game-screen-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  z-index: 9999;
+}
+
+.emulator-wrapper {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 18px;
+  text-align: center;
+  z-index: 10;
+}
+
+.emulator-container {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Ensure emulator content fills the screen */
+.emulator-container > * {
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+}
+
+/* Style the emulator canvas when it loads */
+.emulator-container canvas {
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: contain;
+  background: #000;
+}

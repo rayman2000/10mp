@@ -1,0 +1,79 @@
+.message-input-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  color: white;
+  font-family: 'Arial', sans-serif;
+}
+
+.message-container {
+  text-align: center;
+  max-width: 600px;
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.message-container h2 {
+  margin-bottom: 10px;
+  color: #4a90e2;
+  font-size: 28px;
+}
+
+.message-container p {
+  margin-bottom: 30px;
+  font-size: 18px;
+  color: #ccc;
+}
+
+.message-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.message-form textarea {
+  padding: 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.message-form textarea:focus {
+  outline: none;
+  box-shadow: 0 0 20px rgba(74, 144, 226, 0.5);
+}
+
+.char-counter {
+  text-align: right;
+  font-size: 14px;
+  color: #999;
+  margin-top: -10px;
+}
+
+.message-form button {
+  padding: 15px 30px;
+  font-size: 20px;
+  font-weight: bold;
+  border: none;
+  border-radius: 10px;
+  background: #4a90e2;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.message-form button:hover {
+  background: #357abd;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(74, 144, 226, 0.4);
+}
