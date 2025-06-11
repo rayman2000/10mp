@@ -30,18 +30,25 @@ class EmulatorManager {
     try {
       console.log('Starting EmulatorJS initialization...');
       
+      // Wait a bit for React to render the container
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Check if container exists
       const container = document.getElementById('emulator-container');
       if (!container) {
         throw new Error('Emulator container not found');
       }
 
-      // Clear any existing content and reset container
+      console.log('Container found:', container);
+      
+      // Clear any existing EmulatorJS instances/globals first
+      this.clearPreviousInstance();
+      
+      // Ensure container is properly set up
       container.innerHTML = '';
       container.style.display = 'block';
-      
-      // Clear any existing EmulatorJS instances/globals
-      this.clearPreviousInstance();
+      container.style.width = '100%';
+      container.style.height = '100%';
       
       // Set up EmulatorJS configuration exactly as per documentation
       console.log('Setting up EmulatorJS configuration...');
@@ -60,11 +67,25 @@ class EmulatorManager {
       // Debug callbacks with better error handling
       window.EJS_onLoaded = () => {
         console.log('✅ EmulatorJS loaded successfully');
-        this.isRunning = true;
+        console.log('Module available:', typeof window.Module !== 'undefined');
+        console.log('Container still exists:', !!document.getElementById('emulator-container'));
+        // Don't set isRunning here, wait for game start
       };
       
       window.EJS_onGameStart = () => {
         console.log('✅ Game started successfully');
+        this.isRunning = true; // Set isRunning when game actually starts
+        console.log('EmulatorManager isRunning set to:', this.isRunning);
+        
+        if (window.EJS_emulator && window.EJS_emulator.Module) {
+          console.log('EJS_emulator.Module available:', !!window.EJS_emulator.Module);
+          console.log('Module HEAPU8:', !!window.EJS_emulator.Module.HEAPU8);
+          console.log('Module HEAPU16:', !!window.EJS_emulator.Module.HEAPU16);
+          console.log('Module HEAPU32:', !!window.EJS_emulator.Module.HEAPU32);
+          if (window.EJS_emulator.Module.HEAPU8) {
+            console.log('Memory access working! HEAPU8 length:', window.EJS_emulator.Module.HEAPU8.length);
+          }
+        }
         this.startAutoSave();
       };
       
@@ -222,32 +243,200 @@ class EmulatorManager {
     }
   }
 
-  // ROM scraping methods (placeholder for Pokemon Fire Red data)
+  // ROM scraping methods for Pokemon Fire Red data
   async scrapeGameData() {
+    console.log('scrapeGameData called, isRunning:', this.isRunning);
+    
     if (!this.isRunning) {
+      console.log('Emulator not running, returning null');
       return null;
     }
 
     try {
-      // Mock data for now - real implementation would read from emulator memory
+      console.log('Attempting to scrape game data...');
+      
+      // Access EmulatorJS memory through Module interface
       const gameData = {
-        playerName: 'ASH', // Would read from memory
-        location: 'Pallet Town', // Would read from memory
-        badges: 0, // Would read from memory
-        playtime: {
-          hours: 0,
-          minutes: 5,
-          seconds: 30
-        },
-        party: [], // Would read Pokemon party data
-        money: 3000 // Would read from memory
+        timestamp: new Date().toISOString(),
+        playerName: this.readPlayerName(),
+        location: this.readCurrentLocation(),
+        badges: this.readBadgeCount(),
+        playtime: this.readPlaytime(),
+        party: this.readPartyData(),
+        money: this.readMoney()
       };
 
+      console.log('Raw scraped game data:', gameData);
+      
       return gameData;
     } catch (error) {
       console.error('Failed to scrape game data:', error);
       return null;
     }
+  }
+
+  // Helper function to get memory access
+  getMemoryArray(type = 'HEAPU8') {
+    // Try multiple ways to access memory
+    if (window.EJS_emulator && window.EJS_emulator.Module && window.EJS_emulator.Module[type]) {
+      return window.EJS_emulator.Module[type];
+    } else if (window.Module && window.Module[type]) {
+      return window.Module[type];
+    }
+    return null;
+  }
+
+  // Helper methods to read specific memory addresses
+  readPlayerName() {
+    try {
+      const memoryArray = this.getMemoryArray('HEAPU8');
+      if (!memoryArray) {
+        return 'MEMORY_NOT_READY';
+      }
+      
+      const nameAddr = 0x02025734;
+      const nameBytes = [];
+      
+      // Read up to 7 characters (Pokemon name limit)
+      for (let i = 0; i < 7; i++) {
+        const byte = memoryArray[nameAddr + i];
+        if (byte === 0xFF || byte === 0x00) break; // End of string
+        nameBytes.push(byte);
+      }
+      
+      // Convert Pokemon character encoding to ASCII (simplified)
+      return this.convertPokemonText(nameBytes);
+    } catch (error) {
+      console.error('Error reading player name:', error);
+      return 'ERROR';
+    }
+  }
+
+  readCurrentLocation() {
+    try {
+      const memoryArray = this.getMemoryArray('HEAPU8');
+      if (!memoryArray) {
+        return 'MEMORY_NOT_READY';
+      }
+      
+      const locationAddr = 0x02036E38;
+      const mapId = memoryArray[locationAddr];
+      
+      // Map some common Fire Red location IDs
+      const locationMap = {
+        0: 'Pallet Town',
+        1: 'Viridian City',
+        2: 'Pewter City',
+        3: 'Cerulean City',
+        4: 'Vermilion City',
+        5: 'Lavender Town',
+        6: 'Celadon City',
+        7: 'Fuchsia City',
+        8: 'Cinnabar Island',
+        9: 'Indigo Plateau'
+      };
+      
+      return locationMap[mapId] || `Unknown (ID: ${mapId})`;
+    } catch (error) {
+      console.error('Error reading location:', error);
+      return 'ERROR';
+    }
+  }
+
+  readBadgeCount() {
+    try {
+      const memoryArray = this.getMemoryArray('HEAPU8');
+      if (!memoryArray) {
+        return 0;
+      }
+      
+      const badgeAddr = 0x02024E80;
+      const badgeFlags = memoryArray[badgeAddr];
+      
+      // Count set bits (each bit represents a badge)
+      let count = 0;
+      for (let i = 0; i < 8; i++) {
+        if (badgeFlags & (1 << i)) count++;
+      }
+      
+      return count;
+    } catch (error) {
+      console.error('Error reading badge count:', error);
+      return 0;
+    }
+  }
+
+  readPlaytime() {
+    try {
+      const memoryArray8 = this.getMemoryArray('HEAPU8');
+      const memoryArray16 = this.getMemoryArray('HEAPU16');
+      if (!memoryArray8 || !memoryArray16) {
+        return { hours: 0, minutes: 0, seconds: 0 };
+      }
+      
+      const timeAddr = 0x02024E60;
+      const hours = memoryArray16[timeAddr / 2];
+      const minutes = memoryArray8[timeAddr + 2];
+      const seconds = memoryArray8[timeAddr + 3];
+      
+      return { hours, minutes, seconds };
+    } catch (error) {
+      console.error('Error reading playtime:', error);
+      return { hours: 0, minutes: 0, seconds: 0 };
+    }
+  }
+
+  readMoney() {
+    try {
+      const memoryArray = this.getMemoryArray('HEAPU32');
+      if (!memoryArray) {
+        return 0;
+      }
+      
+      const moneyAddr = 0x0202452C;
+      return memoryArray[moneyAddr / 4];
+    } catch (error) {
+      console.error('Error reading money:', error);
+      return 0;
+    }
+  }
+
+  readPartyData() {
+    try {
+      const memoryArray = this.getMemoryArray('HEAPU8');
+      if (!memoryArray) {
+        return [];
+      }
+      
+      // This is a simplified version - full party data is complex
+      const partyCountAddr = 0x02024284;
+      const partyCount = memoryArray[partyCountAddr];
+      
+      return Array(Math.min(partyCount, 6)).fill(null).map((_, i) => ({
+        slot: i + 1,
+        species: 'Unknown', // Would need species ID lookup
+        level: 1, // Would need to read level data
+        nickname: 'Pokemon' // Would need to read nickname
+      }));
+    } catch (error) {
+      console.error('Error reading party data:', error);
+      return [];
+    }
+  }
+
+  // Convert Pokemon character encoding to readable text (simplified)
+  convertPokemonText(bytes) {
+    // Pokemon Fire Red uses a custom character encoding
+    // This is a simplified conversion - full implementation would need complete character map
+    const charMap = {
+      0xBB: 'A', 0xBC: 'B', 0xBD: 'C', 0xBE: 'D', 0xBF: 'E', 0xC0: 'F',
+      0xC1: 'G', 0xC2: 'H', 0xC3: 'I', 0xC4: 'J', 0xC5: 'K', 0xC6: 'L',
+      0xC7: 'M', 0xC8: 'N', 0xC9: 'O', 0xCA: 'P', 0xCB: 'Q', 0xCC: 'R',
+      0xCD: 'S', 0xCE: 'T', 0xCF: 'U', 0xD0: 'V', 0xD1: 'W', 0xD2: 'X',
+      0xD3: 'Y', 0xD4: 'Z'
+    };
+    
+    return bytes.map(byte => charMap[byte] || '?').join('');
   }
 
   destroy() {

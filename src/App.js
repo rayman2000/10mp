@@ -9,30 +9,39 @@ function App() {
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [previousMessage, setPreviousMessage] = useState('Welcome to 10 Minute Pokemon! Make some progress and have fun!');
 
-  const screens = {
-    entry: <PlayerEntry 
-      previousMessage={previousMessage}
-      onStartGame={(playerName) => {
-        setCurrentPlayer(playerName);
-        setCurrentScreen('game');
-      }}
-    />,
-    game: <GameScreen 
-      player={currentPlayer}
-      onGameEnd={() => setCurrentScreen('message')}
-    />,
-    message: <MessageInput
-      player={currentPlayer}
-      onMessageSubmit={(message) => {
-        setPreviousMessage(message);
-        setCurrentScreen('entry');
-      }}
-    />
-  };
-
   return (
     <div className="App">
-      {screens[currentScreen]}
+      {/* Always render GameScreen but make it interactive only when current screen is 'game' */}
+      <GameScreen 
+        player={currentPlayer}
+        isActive={currentScreen === 'game'}
+        onGameEnd={() => setCurrentScreen('message')}
+      />
+      
+      {/* Overlay screens when not in game mode */}
+      {currentScreen === 'entry' && (
+        <div className="screen-overlay">
+          <PlayerEntry 
+            previousMessage={previousMessage}
+            onStartGame={(playerName) => {
+              setCurrentPlayer(playerName);
+              setCurrentScreen('game');
+            }}
+          />
+        </div>
+      )}
+      
+      {currentScreen === 'message' && (
+        <div className="screen-overlay">
+          <MessageInput
+            player={currentPlayer}
+            onMessageSubmit={(message) => {
+              setPreviousMessage(message);
+              setCurrentScreen('entry');
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
