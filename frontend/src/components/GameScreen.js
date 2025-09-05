@@ -1,18 +1,54 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEmulator } from '../hooks/useEmulator';
+import { gameApi } from '../services/api';
 import './GameScreen.css';
 
 const GameScreen = ({ player, isActive = true, onGameEnd }) => {
   const containerRef = useRef(null);
+  const [latestGameData, setLatestGameData] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [turnStartTime] = useState(() => new Date());
   const {
     isLoaded,
     isRunning,
     error,
     startGame,
-    scrapeData
+    scrapeData,
+    saveGame
   } = useEmulator();
 
   console.log('GameScreen render:', { isLoaded, isRunning, error });
+
+  // Function to save turn data to backend
+  const saveTurnData = useCallback(async () => {
+    if (!player || !latestGameData || isSaving) return;
+    
+    setIsSaving(true);
+    try {
+      const turnEndTime = new Date();
+      const turnDuration = Math.floor((turnEndTime - turnStartTime) / 1000); // Duration in seconds
+      const saveState = saveGame(); // Get current save state from emulator
+
+      const turnData = {
+        playerName: player,
+        location: latestGameData.location || 'Unknown',
+        badgeCount: latestGameData.badgeCount || 0,
+        playtime: latestGameData.playtime || 0,
+        money: latestGameData.money || 0,
+        partyData: latestGameData.partyData || [],
+        turnDuration,
+        saveState: saveState ? JSON.stringify(saveState) : null
+      };
+
+      console.log('Saving turn data:', turnData);
+      const result = await gameApi.saveGameTurn(turnData);
+      console.log('Turn data saved successfully:', result);
+    } catch (error) {
+      console.error('Failed to save turn data:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [player, latestGameData, isSaving, turnStartTime, saveGame]);
 
   useEffect(() => {
     if (isLoaded) {
@@ -38,26 +74,28 @@ const GameScreen = ({ player, isActive = true, onGameEnd }) => {
   useEffect(() => {
     if (!isActive) return;
     
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
+      await saveTurnData();
       onGameEnd();
     }, 600000); // 10 minutes
 
     return () => clearTimeout(timer);
-  }, [onGameEnd, isActive]);
+  }, [onGameEnd, isActive, saveTurnData]);
 
   // Manual game end with escape key - only when active
   useEffect(() => {
     if (!isActive) return;
     
-    const handleKeyPress = (e) => {
+    const handleKeyPress = async (e) => {
       if (e.key === 'Escape') {
+        await saveTurnData();
         onGameEnd();
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [onGameEnd, isActive]);
+  }, [onGameEnd, isActive, saveTurnData]);
 
   // Scrape game data every minute when active and save to file
   useEffect(() => {
@@ -76,6 +114,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd }) => {
         const gameData = await scrapeData();
         console.log('Scraped data result:', gameData);
         if (gameData) {
+          setLatestGameData(gameData);
           await saveGameDataToFile(gameData, player);
         }
       } catch (error) {
@@ -90,6 +129,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd }) => {
         const gameData = await scrapeData();
         console.log('Initial scrape result:', gameData);
         if (gameData) {
+          setLatestGameData(gameData);
           await saveGameDataToFile(gameData, player);
         }
       } catch (error) {
@@ -166,6 +206,11 @@ const GameScreen = ({ player, isActive = true, onGameEnd }) => {
         {!isLoaded && (
           <div className="loading-overlay">
             Loading emulator...
+          </div>
+        )}
+        {isSaving && (
+          <div className="loading-overlay">
+            Saving game data...
           </div>
         )}
         <div 

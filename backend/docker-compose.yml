@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: tenmp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tenmp_db
+      POSTGRES_USER: tenmp_user
+      POSTGRES_PASSWORD: tenmp_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenmp_user -d tenmp_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: tenmp-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: tenmp_db
+      DB_USERNAME: tenmp_user
+      DB_PASSWORD: tenmp_password
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npm run dev
+
+volumes:
+  postgres_data:
