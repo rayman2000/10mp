@@ -46,6 +46,14 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.get('/api/config', (req, res) => {
+  res.json({
+    turnDurationMinutes: parseInt(process.env.TURN_DURATION_MINUTES) || 10,
+    autoSaveIntervalMinutes: parseInt(process.env.AUTO_SAVE_INTERVAL_MINUTES) || 1,
+    defaultSessionId: process.env.DEFAULT_SESSION_ID || 'main-game'
+  });
+});
+
 app.post('/api/game-turns', validateGameTurn, async (req, res) => {
   try {
     const {

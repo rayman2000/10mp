@@ -3,7 +3,7 @@ import { useEmulator } from '../hooks/useEmulator';
 import { gameApi } from '../services/api';
 import './GameScreen.css';
 
-const GameScreen = ({ player, isActive = true, onGameEnd }) => {
+const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
   const containerRef = useRef(null);
   const [latestGameData, setLatestGameData] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -15,7 +15,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd }) => {
     startGame,
     scrapeData,
     saveGame
-  } = useEmulator();
+  } = useEmulator(config);
 
   console.log('GameScreen render:', { isLoaded, isRunning, error });
 
@@ -70,17 +70,20 @@ const GameScreen = ({ player, isActive = true, onGameEnd }) => {
     }
   }, [isActive]);
 
-  // Auto-end game after 10 minutes - only when active
+  // Auto-end game after configured duration - only when active
   useEffect(() => {
-    if (!isActive) return;
-    
+    if (!isActive || !config) return;
+
+    const turnDurationMs = (config.turnDurationMinutes || 10) * 60000;
+    console.log(`Turn will end in ${config.turnDurationMinutes} minutes (${turnDurationMs}ms)`);
+
     const timer = setTimeout(async () => {
       await saveTurnData();
       onGameEnd();
-    }, 600000); // 10 minutes
+    }, turnDurationMs);
 
     return () => clearTimeout(timer);
-  }, [onGameEnd, isActive, saveTurnData]);
+  }, [onGameEnd, isActive, saveTurnData, config]);
 
   // Manual game end with escape key - only when active
   useEffect(() => {

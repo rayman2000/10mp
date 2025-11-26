@@ -12,6 +12,29 @@ function App() {
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [previousMessage, setPreviousMessage] = useState('Welcome to 10 Minute Pokemon! Make some progress and have fun!');
   const [backendOnline, setBackendOnline] = useState(true);
+  const [config, setConfig] = useState({
+    turnDurationMinutes: 10,
+    autoSaveIntervalMinutes: 1,
+    defaultSessionId: 'main-game'
+  });
+
+  // Fetch config on mount
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/config`);
+        if (response.ok) {
+          const configData = await response.json();
+          setConfig(configData);
+          console.log('Configuration loaded:', configData);
+        }
+      } catch (error) {
+        console.error('Failed to fetch config, using defaults:', error);
+      }
+    };
+
+    fetchConfig();
+  }, []);
 
   // Health check polling
   useEffect(() => {
@@ -63,6 +86,7 @@ function App() {
           player={currentPlayer}
           isActive={currentScreen === 'game'}
           onGameEnd={() => setCurrentScreen('message')}
+          config={config}
         />
       </ErrorBoundary>
       

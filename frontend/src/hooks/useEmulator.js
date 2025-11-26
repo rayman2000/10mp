@@ -1,22 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import EmulatorManager from '../utils/emulator';
 
-export const useEmulator = () => {
+export const useEmulator = (config = {}) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [gameData, setGameData] = useState(null);
   const [error, setError] = useState(null);
-  
+
   const emulatorRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
-    
+
     const initEmulator = async () => {
       try {
         if (!mounted) return;
-        
-        emulatorRef.current = new EmulatorManager();
+
+        emulatorRef.current = new EmulatorManager(config);
         const success = await emulatorRef.current.initialize();
         
         if (!mounted) return;

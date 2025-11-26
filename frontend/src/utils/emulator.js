@@ -1,10 +1,13 @@
 // EmulatorJS integration utilities following official documentation
 class EmulatorManager {
-  constructor() {
+  constructor(config = {}) {
     this.isRunning = false;
     this.gameState = null;
     this.saveStateInterval = null;
     this.scriptLoaded = false;
+    this.config = config;
+    this.autoSaveIntervalMs = (config.autoSaveIntervalMinutes || 1) * 60000;
+    console.log(`EmulatorManager initialized with auto-save interval: ${config.autoSaveIntervalMinutes || 1} minutes`);
   }
 
   clearPreviousInstance() {
@@ -231,9 +234,10 @@ class EmulatorManager {
   }
 
   startAutoSave() {
+    console.log(`Starting auto-save with interval: ${this.autoSaveIntervalMs}ms`);
     this.saveStateInterval = setInterval(() => {
       this.saveState();
-    }, 10000); // Save every 10 seconds
+    }, this.autoSaveIntervalMs);
   }
 
   stopAutoSave() {
