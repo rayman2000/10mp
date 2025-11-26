@@ -46,11 +46,11 @@ module.exports = (sequelize, DataTypes) => {
     defaultValue: DataTypes.NOW,
     field: 'turn_ended_at'
   },
-  saveState: {
-    type: DataTypes.TEXT,
+  saveStateUrl: {
+    type: DataTypes.STRING,
     allowNull: true,
-    field: 'save_state',
-    comment: 'Base64 encoded save state data'
+    field: 'save_state_url',
+    comment: 'MinIO object key/URL for save state file'
   }
 }, {
   tableName: 'game_turns',
