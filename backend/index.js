@@ -7,14 +7,46 @@ const GameTurn = require('./models').GameTurn;
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// Configure CORS with environment variable
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true
+};
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
+
+// Basic request validation middleware
+const validateGameTurn = (req, res, next) => {
+  const { playerName, badgeCount, playtime, money, turnDuration } = req.body;
+
+  if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
+    return res.status(400).json({ error: 'Valid playerName is required' });
+  }
+
+  if (badgeCount !== undefined && (typeof badgeCount !== 'number' || badgeCount < 0 || badgeCount > 8)) {
+    return res.status(400).json({ error: 'badgeCount must be a number between 0 and 8' });
+  }
+
+  if (playtime !== undefined && (typeof playtime !== 'number' || playtime < 0)) {
+    return res.status(400).json({ error: 'playtime must be a non-negative number' });
+  }
+
+  if (money !== undefined && (typeof money !== 'number' || money < 0)) {
+    return res.status(400).json({ error: 'money must be a non-negative number' });
+  }
+
+  if (turnDuration !== undefined && (typeof turnDuration !== 'number' || turnDuration < 0)) {
+    return res.status(400).json({ error: 'turnDuration must be a non-negative number' });
+  }
+
+  next();
+};
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.post('/api/game-turns', async (req, res) => {
+app.post('/api/game-turns', validateGameTurn, async (req, res) => {
   try {
     const {
       playerName,
@@ -26,10 +58,6 @@ app.post('/api/game-turns', async (req, res) => {
       turnDuration,
       saveState
     } = req.body;
-
-    if (!playerName) {
-      return res.status(400).json({ error: 'playerName is required' });
-    }
 
     const gameTurn = await GameTurn.create({
       playerName,
@@ -136,9 +164,7 @@ const startServer = async () => {
   try {
     await sequelize.authenticate();
     console.log('Database connection established successfully.');
-    
-    await sequelize.sync();
-    console.log('Database synchronized successfully.');
+    console.log('Run migrations with: npm run db:migrate');
 
     app.listen(PORT, () => {
       console.log(`10MP Backend server running on port ${PORT}`);
@@ -150,5 +176,21 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+// Graceful shutdown handler
+const gracefulShutdown = async (signal) => {
+  console.log(`\nReceived ${signal}, closing server gracefully...`);
+  try {
+    await sequelize.close();
+    console.log('Database connections closed.');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 startServer();

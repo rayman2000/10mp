@@ -54,7 +54,7 @@ class EmulatorManager {
       console.log('Setting up EmulatorJS configuration...');
       window.EJS_player = '#emulator-container';
       window.EJS_core = 'gba';
-      window.EJS_gameUrl = '/emulator/pokemon-firered.gba';
+      window.EJS_gameUrl = process.env.REACT_APP_ROM_PATH || '/emulator/pokemon-firered.gba';
       window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
       
       // Optional configurations - disable controls to auto-start
