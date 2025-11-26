@@ -90,6 +90,12 @@ export const useEmulator = (config = {}) => {
     return null;
   };
 
+  const setAutoSaveCallback = (callback) => {
+    if (emulatorRef.current) {
+      emulatorRef.current.setAutoSaveCallback(callback);
+    }
+  };
+
   return {
     isLoaded,
     isRunning,
@@ -99,6 +105,7 @@ export const useEmulator = (config = {}) => {
     pauseGame,
     saveGame,
     loadGame,
-    scrapeData
+    scrapeData,
+    setAutoSaveCallback
   };
 };

@@ -309,19 +309,77 @@ app.post('/api/game-turns', validateGameTurn, async (req, res) => {
       saveState
     } = req.body;
 
-    const gameTurn = await GameTurn.create({
-      playerName,
-      location,
-      badgeCount: badgeCount || 0,
-      playtime,
-      money: money || 0,
-      partyData,
-      turnDuration: turnDuration || 600,
-      saveState,
-      turnEndedAt: new Date()
-    });
+    let saveStateUrl = null;
 
-    res.status(201).json(gameTurn);
+    // Upload save state to MinIO if provided
+    if (saveState && saveStateStorage.initialized) {
+      try {
+        const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+
+        // Create the GameTurn first to get the ID
+        const gameTurn = await GameTurn.create({
+          playerName,
+          location,
+          badgeCount: badgeCount || 0,
+          playtime,
+          money: money || 0,
+          partyData,
+          turnDuration: turnDuration || 600,
+          saveStateUrl: null, // Will update after MinIO upload
+          turnEndedAt: new Date()
+        });
+
+        // Upload to MinIO with turn ID
+        const metadata = {
+          playerName,
+          location: location || 'Unknown',
+          badgeCount: badgeCount || 0
+        };
+
+        saveStateUrl = await saveStateStorage.saveTurnSave(
+          sessionId,
+          gameTurn.id,
+          saveState,
+          metadata
+        );
+
+        // Update the GameTurn with the MinIO URL
+        gameTurn.saveStateUrl = saveStateUrl;
+        await gameTurn.save();
+
+        console.log(`Turn save uploaded to MinIO: ${saveStateUrl}`);
+        res.status(201).json(gameTurn);
+      } catch (minioError) {
+        console.error('MinIO upload failed:', minioError);
+        // Still create the turn record even if MinIO fails
+        const gameTurn = await GameTurn.create({
+          playerName,
+          location,
+          badgeCount: badgeCount || 0,
+          playtime,
+          money: money || 0,
+          partyData,
+          turnDuration: turnDuration || 600,
+          saveStateUrl: null,
+          turnEndedAt: new Date()
+        });
+        res.status(201).json({ ...gameTurn.toJSON(), warning: 'Save state upload failed' });
+      }
+    } else {
+      // No save state provided or MinIO not initialized
+      const gameTurn = await GameTurn.create({
+        playerName,
+        location,
+        badgeCount: badgeCount || 0,
+        playtime,
+        money: money || 0,
+        partyData,
+        turnDuration: turnDuration || 600,
+        saveStateUrl: null,
+        turnEndedAt: new Date()
+      });
+      res.status(201).json(gameTurn);
+    }
   } catch (error) {
     console.error('Error creating game turn:', error);
     res.status(500).json({ error: 'Failed to save game turn data' });
@@ -416,10 +474,20 @@ const startServer = async () => {
     console.log('Database connection established successfully.');
     console.log('Run migrations with: npm run db:migrate');
 
+    // Initialize MinIO storage
+    console.log('Initializing MinIO storage...');
+    const minioInitialized = await saveStateStorage.initialize();
+    if (minioInitialized) {
+      console.log('MinIO storage initialized successfully.');
+    } else {
+      console.warn('MinIO storage initialization failed. Save states will not work.');
+    }
+
     app.listen(PORT, () => {
       console.log(`10MP Backend server running on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
       console.log(`API docs: http://localhost:${PORT}/api/game-turns`);
+      console.log(`Admin panel: Press Ctrl+Shift+A in frontend`);
     });
   } catch (error) {
     console.error('Unable to start server:', error);

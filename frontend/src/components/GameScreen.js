@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEmulator } from '../hooks/useEmulator';
-import { gameApi } from '../services/api';
+import { gameApi, sessionApi } from '../services/api';
 import './GameScreen.css';
 
 const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
@@ -14,7 +14,8 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
     error,
     startGame,
     scrapeData,
-    saveGame
+    saveGame,
+    setAutoSaveCallback
   } = useEmulator(config);
 
   console.log('GameScreen render:', { isLoaded, isRunning, error });
@@ -53,8 +54,23 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
   useEffect(() => {
     if (isLoaded) {
       startGame();
+
+      // Set up auto-save callback to upload to backend
+      const handleAutoSave = async (saveData) => {
+        try {
+          const sessionId = config?.defaultSessionId || 'main-game';
+          console.log('Auto-save triggered, uploading to backend...');
+
+          await sessionApi.saveGameState(sessionId, saveData, latestGameData || {});
+          console.log('Auto-save uploaded successfully');
+        } catch (error) {
+          console.error('Failed to upload auto-save:', error);
+        }
+      };
+
+      setAutoSaveCallback(handleAutoSave);
     }
-  }, [isLoaded]);
+  }, [isLoaded, setAutoSaveCallback, config, latestGameData]);
 
   // Focus emulator when becoming active to ensure immediate input
   useEffect(() => {

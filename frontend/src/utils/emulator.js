@@ -7,7 +7,13 @@ class EmulatorManager {
     this.scriptLoaded = false;
     this.config = config;
     this.autoSaveIntervalMs = (config.autoSaveIntervalMinutes || 1) * 60000;
+    this.autoSaveCallback = null; // Callback for auto-save uploads
     console.log(`EmulatorManager initialized with auto-save interval: ${config.autoSaveIntervalMinutes || 1} minutes`);
+  }
+
+  setAutoSaveCallback(callback) {
+    this.autoSaveCallback = callback;
+    console.log('Auto-save callback registered');
   }
 
   clearPreviousInstance() {
@@ -346,7 +352,12 @@ class EmulatorManager {
   startAutoSave() {
     console.log(`Starting auto-save with interval: ${this.autoSaveIntervalMs}ms`);
     this.saveStateInterval = setInterval(() => {
-      this.saveState();
+      const saveData = this.saveState();
+
+      // Call callback if provided and save data exists
+      if (this.autoSaveCallback && saveData) {
+        this.autoSaveCallback(saveData);
+      }
     }, this.autoSaveIntervalMs);
   }
 
