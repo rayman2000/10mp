@@ -1,7 +1,7 @@
 {
-  "name": "10mp",
+  "name": "10mp-frontend",
   "version": "1.0.0",
-  "description": "10 Minute Pokemon - A shared Pokemon Fire Red experience",
+  "description": "10 Minute Pokemon frontend - React-based kiosk interface with GBA emulation, session code connection, turn-based gameplay timer, and admin panel for game state management.",
   "main": "index.js",
   "scripts": {
     "start": "react-scripts start",

@@ -1,7 +1,7 @@
 {
   "name": "10mp",
   "version": "1.0.0",
-  "description": "10 Minute Pokemon - Collaborative Pokemon Fire Red Experience",
+  "description": "10 Minute Pokemon - A collaborative Pokemon Fire Red kiosk experience where players take 10-minute turns. Features remote session management, cloud save states, and admin controls for kiosk deployment.",
   "scripts": {
     "frontend:dev": "cd frontend && npm start",
     "frontend:build": "cd frontend && npm run build",

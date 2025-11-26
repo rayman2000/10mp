@@ -1,7 +1,7 @@
 {
   "name": "10mp-backend",
   "version": "1.0.0",
-  "description": "Backend API for 10 Minute Pokemon collaborative experience",
+  "description": "10 Minute Pokemon backend - Express API with PostgreSQL for game turn tracking, MinIO for save state storage, session management with 6-digit codes, and admin controls for kiosk deployment.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
