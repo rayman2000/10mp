@@ -211,11 +211,59 @@ class EmulatorManager {
   }
 
   saveState() {
-    // This would need to interface with EmulatorJS save state functionality
     try {
-      // EmulatorJS save state API would go here
-      console.log('Save state requested');
-      return null; // Placeholder
+      if (!window.EJS_emulator) {
+        console.warn('EJS_emulator not available for save state');
+        return null;
+      }
+
+      console.log('Attempting to save game state...');
+
+      // EmulatorJS provides save state functionality through the emulator instance
+      // The exact API may vary, so we try multiple approaches
+      let saveData = null;
+
+      // Method 1: Direct saveState function
+      if (typeof window.EJS_emulator.saveState === 'function') {
+        saveData = window.EJS_emulator.saveState();
+        console.log('Save state created via EJS_emulator.saveState()');
+      }
+      // Method 2: GameManager API
+      else if (window.EJS_emulator.gameManager && typeof window.EJS_emulator.gameManager.saveState === 'function') {
+        saveData = window.EJS_emulator.gameManager.saveState();
+        console.log('Save state created via gameManager.saveState()');
+      }
+      // Method 3: Direct FS access (RetroArch cores)
+      else if (window.EJS_emulator.Module && window.EJS_emulator.Module.FS) {
+        try {
+          const FS = window.EJS_emulator.Module.FS;
+          // RetroArch typically saves to /home/web_user/retroarch/userdata/states/
+          const savePath = '/home/web_user/retroarch/userdata/states/game.state';
+          if (FS.analyzePath(savePath).exists) {
+            saveData = FS.readFile(savePath);
+            console.log('Save state read from FS:', savePath);
+          } else {
+            console.warn('Save file not found at:', savePath);
+          }
+        } catch (fsError) {
+          console.warn('FS access failed:', fsError);
+        }
+      }
+
+      if (saveData) {
+        // Convert to Base64 for easier transport
+        if (saveData instanceof Uint8Array) {
+          const base64 = btoa(String.fromCharCode.apply(null, saveData));
+          console.log(`Save state captured: ${base64.length} chars (Base64)`);
+          return base64;
+        } else if (typeof saveData === 'string') {
+          console.log(`Save state captured: ${saveData.length} chars`);
+          return saveData;
+        }
+      }
+
+      console.warn('No save state data could be retrieved');
+      return null;
     } catch (error) {
       console.error('Failed to save game state:', error);
       return null;
@@ -223,10 +271,72 @@ class EmulatorManager {
   }
 
   loadState(stateData) {
-    // This would need to interface with EmulatorJS load state functionality
     try {
-      console.log('Load state requested');
-      return false; // Placeholder
+      if (!window.EJS_emulator || !stateData) {
+        console.warn('EJS_emulator not available or no state data provided');
+        return false;
+      }
+
+      console.log('Attempting to load game state...');
+
+      // Convert Base64 back to Uint8Array if needed
+      let data = stateData;
+      if (typeof stateData === 'string' && stateData.length > 0) {
+        try {
+          // Try to decode as Base64
+          const binaryString = atob(stateData);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          data = bytes;
+          console.log('Converted Base64 to Uint8Array:', data.length, 'bytes');
+        } catch (decodeError) {
+          console.warn('Not Base64 encoded, using as-is');
+        }
+      }
+
+      // Method 1: Direct loadState function
+      if (typeof window.EJS_emulator.loadState === 'function') {
+        window.EJS_emulator.loadState(data);
+        console.log('Save state loaded via EJS_emulator.loadState()');
+        return true;
+      }
+      // Method 2: GameManager API
+      else if (window.EJS_emulator.gameManager && typeof window.EJS_emulator.gameManager.loadState === 'function') {
+        window.EJS_emulator.gameManager.loadState(data);
+        console.log('Save state loaded via gameManager.loadState()');
+        return true;
+      }
+      // Method 3: Direct FS write (RetroArch cores)
+      else if (window.EJS_emulator.Module && window.EJS_emulator.Module.FS && data instanceof Uint8Array) {
+        try {
+          const FS = window.EJS_emulator.Module.FS;
+          const savePath = '/home/web_user/retroarch/userdata/states/game.state';
+
+          // Ensure directory exists
+          const dirPath = '/home/web_user/retroarch/userdata/states';
+          if (!FS.analyzePath(dirPath).exists) {
+            FS.mkdirTree(dirPath);
+          }
+
+          FS.writeFile(savePath, data);
+          console.log('Save state written to FS:', savePath);
+
+          // Trigger load if there's a load function
+          if (window.EJS_emulator.Module._cmd_load_state) {
+            window.EJS_emulator.Module._cmd_load_state();
+          }
+
+          return true;
+        } catch (fsError) {
+          console.error('FS write failed:', fsError);
+          return false;
+        }
+      }
+
+      console.warn('No supported load state method available');
+      return false;
     } catch (error) {
       console.error('Failed to load game state:', error);
       return false;

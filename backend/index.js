@@ -204,6 +204,53 @@ app.post('/api/session/stop', async (req, res) => {
   }
 });
 
+// POST /api/session/save - Save current game state to MinIO
+app.post('/api/session/save', async (req, res) => {
+  try {
+    const { sessionId, saveData, gameData } = req.body;
+
+    if (!sessionId || !saveData) {
+      return res.status(400).json({ error: 'sessionId and saveData are required' });
+    }
+
+    // Initialize MinIO storage if needed
+    if (!saveStateStorage.initialized) {
+      const initialized = await saveStateStorage.initialize();
+      if (!initialized) {
+        return res.status(500).json({ error: 'Failed to initialize storage' });
+      }
+    }
+
+    // Prepare metadata
+    const metadata = {
+      playerName: gameData?.playerName || 'unknown',
+      location: gameData?.location || 'unknown',
+      badgeCount: gameData?.badgeCount || 0
+    };
+
+    // Save to MinIO as auto-save
+    const saveUrl = await saveStateStorage.saveAutoSave(sessionId, saveData, metadata);
+
+    // Update session's current save state URL
+    const session = await GameSession.findByPk(sessionId);
+    if (session) {
+      session.currentSaveStateUrl = saveUrl;
+      session.lastActivityAt = new Date();
+      await session.save();
+    }
+
+    console.log(`Auto-save stored: ${saveUrl}`);
+    res.json({
+      success: true,
+      saveUrl: saveUrl,
+      message: 'Save state uploaded successfully'
+    });
+  } catch (error) {
+    console.error('Error saving game state:', error);
+    res.status(500).json({ error: 'Failed to save game state' });
+  }
+});
+
 // GET /api/session/saves - List all save points for restore
 app.get('/api/session/saves', async (req, res) => {
   try {
