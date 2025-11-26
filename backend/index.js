@@ -3,6 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const { sequelize } = require('./models');
 const GameTurn = require('./models').GameTurn;
+const GameSession = require('./models').GameSession;
+const { generateSessionCode, isValidSessionCode } = require('./utils/sessionCode');
+const saveStateStorage = require('./services/saveStateStorage');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -52,6 +55,197 @@ app.get('/api/config', (req, res) => {
     autoSaveIntervalMinutes: parseInt(process.env.AUTO_SAVE_INTERVAL_MINUTES) || 1,
     defaultSessionId: process.env.DEFAULT_SESSION_ID || 'main-game'
   });
+});
+
+// Session Management Endpoints
+
+// POST /api/session/init - Initialize or reset session with new code
+app.post('/api/session/init', async (req, res) => {
+  try {
+    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+    const newCode = generateSessionCode();
+
+    // Find or create session
+    let session = await GameSession.findByPk(sessionId);
+
+    if (session) {
+      // Update existing session with new code
+      session.sessionCode = newCode;
+      session.lastActivityAt = new Date();
+      await session.save();
+    } else {
+      // Create new session
+      session = await GameSession.create({
+        sessionId: sessionId,
+        sessionCode: newCode,
+        isActive: false,
+        currentSaveStateUrl: null
+      });
+    }
+
+    console.log(`Session initialized: ${sessionId}, code: ${newCode}`);
+    res.json({
+      sessionId: session.sessionId,
+      sessionCode: session.sessionCode,
+      isActive: session.isActive
+    });
+  } catch (error) {
+    console.error('Error initializing session:', error);
+    res.status(500).json({ error: 'Failed to initialize session' });
+  }
+});
+
+// GET /api/session/connect/:code - Kiosk connects with code
+app.get('/api/session/connect/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    if (!isValidSessionCode(code)) {
+      return res.status(400).json({ error: 'Invalid session code format' });
+    }
+
+    const session = await GameSession.findOne({
+      where: { sessionCode: code }
+    });
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found. Check your code.' });
+    }
+
+    // Update last activity
+    session.lastActivityAt = new Date();
+    await session.save();
+
+    console.log(`Kiosk connected to session: ${session.sessionId}`);
+    res.json({
+      sessionId: session.sessionId,
+      sessionCode: session.sessionCode,
+      isActive: session.isActive,
+      currentSaveStateUrl: session.currentSaveStateUrl
+    });
+  } catch (error) {
+    console.error('Error connecting to session:', error);
+    res.status(500).json({ error: 'Failed to connect to session' });
+  }
+});
+
+// GET /api/session/status - Get current session state
+app.get('/api/session/status', async (req, res) => {
+  try {
+    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+    const session = await GameSession.findByPk(sessionId);
+
+    if (!session) {
+      return res.status(404).json({ error: 'No active session' });
+    }
+
+    res.json({
+      sessionId: session.sessionId,
+      sessionCode: session.sessionCode,
+      isActive: session.isActive,
+      currentSaveStateUrl: session.currentSaveStateUrl,
+      lastActivityAt: session.lastActivityAt
+    });
+  } catch (error) {
+    console.error('Error fetching session status:', error);
+    res.status(500).json({ error: 'Failed to fetch session status' });
+  }
+});
+
+// POST /api/session/start - Admin starts game session
+app.post('/api/session/start', async (req, res) => {
+  try {
+    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+    const session = await GameSession.findByPk(sessionId);
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found. Initialize first.' });
+    }
+
+    session.isActive = true;
+    session.lastActivityAt = new Date();
+    await session.save();
+
+    console.log(`Session started: ${sessionId}`);
+    res.json({
+      sessionId: session.sessionId,
+      isActive: session.isActive,
+      message: 'Session started successfully'
+    });
+  } catch (error) {
+    console.error('Error starting session:', error);
+    res.status(500).json({ error: 'Failed to start session' });
+  }
+});
+
+// POST /api/session/stop - Admin stops game session
+app.post('/api/session/stop', async (req, res) => {
+  try {
+    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+    const session = await GameSession.findByPk(sessionId);
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    session.isActive = false;
+    session.lastActivityAt = new Date();
+    await session.save();
+
+    console.log(`Session stopped: ${sessionId}`);
+    res.json({
+      sessionId: session.sessionId,
+      isActive: session.isActive,
+      message: 'Session stopped successfully'
+    });
+  } catch (error) {
+    console.error('Error stopping session:', error);
+    res.status(500).json({ error: 'Failed to stop session' });
+  }
+});
+
+// GET /api/session/saves - List all save points for restore
+app.get('/api/session/saves', async (req, res) => {
+  try {
+    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+
+    // Initialize MinIO storage if needed
+    if (!saveStateStorage.initialized) {
+      await saveStateStorage.initialize();
+    }
+
+    // Get list of saves from MinIO
+    const saves = await saveStateStorage.listSaveStates(sessionId);
+
+    // Also get GameTurn records for additional metadata
+    const turns = await GameTurn.findAll({
+      attributes: ['id', 'playerName', 'location', 'badgeCount', 'saveStateUrl', 'turnEndedAt'],
+      order: [['turnEndedAt', 'DESC']],
+      limit: 50
+    });
+
+    // Combine MinIO saves with turn metadata
+    const savesWithMetadata = saves.map(save => {
+      const matchingTurn = turns.find(t => t.saveStateUrl === save.name);
+      return {
+        objectKey: save.name,
+        size: save.size,
+        lastModified: save.lastModified,
+        playerName: matchingTurn?.playerName || 'Unknown',
+        location: matchingTurn?.location || 'Unknown',
+        badgeCount: matchingTurn?.badgeCount || 0,
+        turnId: matchingTurn?.id || null
+      };
+    });
+
+    res.json({
+      sessionId: sessionId,
+      saves: savesWithMetadata
+    });
+  } catch (error) {
+    console.error('Error listing save states:', error);
+    res.status(500).json({ error: 'Failed to list save states' });
+  }
 });
 
 app.post('/api/game-turns', validateGameTurn, async (req, res) => {
