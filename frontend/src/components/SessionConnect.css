@@ -1,0 +1,149 @@
+.session-connect-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.session-connect-card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  padding: 40px;
+  max-width: 500px;
+  width: 100%;
+  text-align: center;
+}
+
+.session-connect-title {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0 0 10px 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.session-connect-subtitle {
+  font-size: 1.2rem;
+  color: #666;
+  margin: 0 0 40px 0;
+  font-weight: 500;
+}
+
+.session-connect-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.session-code-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
+  text-align: left;
+}
+
+.session-code-input {
+  font-size: 2.5rem;
+  font-weight: bold;
+  text-align: center;
+  padding: 20px;
+  border: 3px solid #e0e0e0;
+  border-radius: 12px;
+  letter-spacing: 0.5rem;
+  font-family: 'Courier New', monospace;
+  transition: all 0.3s ease;
+}
+
+.session-code-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+.session-code-input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.code-hint {
+  font-size: 0.9rem;
+  color: #999;
+  margin-top: -10px;
+}
+
+.session-error {
+  background-color: #fee;
+  color: #c33;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  border: 1px solid #fcc;
+}
+
+.connect-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 16px 32px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.connect-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.connect-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.connect-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.session-info {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.session-info p {
+  margin: 8px 0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.session-version {
+  font-size: 0.8rem !important;
+  color: #999 !important;
+}
+
+/* Mobile responsive */
+@media (max-width: 600px) {
+  .session-connect-card {
+    padding: 30px 20px;
+  }
+
+  .session-connect-title {
+    font-size: 2rem;
+  }
+
+  .session-code-input {
+    font-size: 2rem;
+    padding: 15px;
+  }
+}

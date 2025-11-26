@@ -62,4 +62,80 @@ export const gameApi = {
   }
 };
 
+export const sessionApi = {
+  async initSession() {
+    try {
+      const response = await api.post('/api/session/init');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to initialize session:', error);
+      throw error;
+    }
+  },
+
+  async connectToSession(code) {
+    try {
+      const response = await api.get(`/api/session/connect/${code}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to connect to session:', error);
+      throw error;
+    }
+  },
+
+  async getSessionStatus() {
+    try {
+      const response = await api.get('/api/session/status');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get session status:', error);
+      throw error;
+    }
+  },
+
+  async startSession() {
+    try {
+      const response = await api.post('/api/session/start');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to start session:', error);
+      throw error;
+    }
+  },
+
+  async stopSession() {
+    try {
+      const response = await api.post('/api/session/stop');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to stop session:', error);
+      throw error;
+    }
+  },
+
+  async listSaveStates() {
+    try {
+      const response = await api.get('/api/session/saves');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to list save states:', error);
+      throw error;
+    }
+  },
+
+  async saveGameState(sessionId, saveData, gameData) {
+    try {
+      const response = await api.post('/api/session/save', {
+        sessionId,
+        saveData,
+        gameData
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to save game state:', error);
+      throw error;
+    }
+  }
+};
+
 export default api;
