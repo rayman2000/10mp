@@ -53,7 +53,8 @@ app.get('/api/config', (req, res) => {
   res.json({
     turnDurationMinutes: parseInt(process.env.TURN_DURATION_MINUTES) || 10,
     autoSaveIntervalMinutes: parseInt(process.env.AUTO_SAVE_INTERVAL_MINUTES) || 1,
-    defaultSessionId: process.env.DEFAULT_SESSION_ID || 'main-game'
+    defaultSessionId: process.env.DEFAULT_SESSION_ID || 'main-game',
+    adminPassword: process.env.ADMIN_PASSWORD || 'change-me-in-production'
   });
 });
 
