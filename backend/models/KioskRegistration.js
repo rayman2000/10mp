@@ -19,11 +19,11 @@ module.exports = (sequelize, DataTypes) => {
     comment: 'Unique identifier for the kiosk (e.g., MAC address, device ID)'
   },
   status: {
-    type: DataTypes.ENUM('pending', 'active', 'inactive'),
+    type: DataTypes.ENUM('pending', 'active', 'inactive', 'denied'),
     allowNull: false,
     defaultValue: 'pending',
     field: 'status',
-    comment: 'Registration status: pending (waiting for admin), active, inactive'
+    comment: 'Registration status: pending (waiting for admin), active, inactive, denied'
   },
   sessionId: {
     type: DataTypes.STRING,
@@ -43,6 +43,12 @@ module.exports = (sequelize, DataTypes) => {
     allowNull: true,
     field: 'activated_at',
     comment: 'When admin activated this kiosk'
+  },
+  deniedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'denied_at',
+    comment: 'When admin denied this kiosk'
   },
   lastHeartbeat: {
     type: DataTypes.DATE,

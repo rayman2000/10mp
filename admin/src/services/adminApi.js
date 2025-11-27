@@ -161,6 +161,18 @@ export const kioskApi = {
       console.error('Failed to activate kiosk:', error);
       throw error;
     }
+  },
+
+  async denyKiosk(token) {
+    try {
+      const response = await api.post('/api/admin/deny-kiosk', {
+        token
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to deny kiosk:', error);
+      throw error;
+    }
   }
 };
 

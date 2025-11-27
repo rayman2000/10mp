@@ -7,11 +7,11 @@
     "frontend:build": "cd frontend && npm run build",
     "admin:dev": "cd admin && npm start",
     "admin:build": "cd admin && npm run build",
-    "docker:dev": "cd backend && docker-compose up --build",
-    "docker:down": "cd backend && docker-compose down",
-    "docker:logs": "cd backend && docker-compose logs -f",
-    "docker:db": "cd backend && docker-compose up postgres -d",
-    "docker:clean": "cd backend && docker-compose down -v && docker system prune -f",
+    "docker:dev": "cd backend && docker compose up --build",
+    "docker:down": "cd backend && docker compose down",
+    "docker:logs": "cd backend && docker compose logs -f",
+    "docker:db": "cd backend && docker compose up postgres -d",
+    "docker:clean": "cd backend && docker compose down -v && docker system prune -f",
     "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install && cd ../admin && npm install"
   },
   "workspaces": [

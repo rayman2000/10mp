@@ -36,7 +36,7 @@ backend/
 ├── .env                   # Environment variables
 ├── .env.docker            # Docker environment
 ├── .sequelizerc           # Sequelize CLI config
-├── docker-compose.yml     # PostgreSQL + MinIO + Backend
+├── docker compose.yml     # PostgreSQL + MinIO + Backend
 ├── Dockerfile             # Production image
 ├── Dockerfile.dev         # Development image
 ├── index.js               # Express server entry point
@@ -452,7 +452,7 @@ Server runs on `http://localhost:3001` with hot reload via nodemon.
 
 ```bash
 cd backend
-docker-compose up --build
+docker compose up --build
 ```
 
 This starts:
@@ -464,27 +464,27 @@ This starts:
 **View Logs:**
 
 ```bash
-docker-compose logs -f
-docker-compose logs -f backend  # Just backend
-docker-compose logs -f postgres # Just database
+docker compose logs -f
+docker compose logs -f backend  # Just backend
+docker compose logs -f postgres # Just database
 ```
 
 **Stop Services:**
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 **Clean Restart (delete volumes):**
 
 ```bash
-docker-compose down -v
-docker-compose up --build
+docker compose down -v
+docker compose up --build
 ```
 
 ### Docker Services
 
-**docker-compose.yml** defines three services:
+**docker compose.yml** defines three services:
 
 **1. postgres**
 ```yaml
@@ -785,7 +785,7 @@ Error: connect ECONNREFUSED 127.0.0.1:5432
 ```
 Solution:
 - Check PostgreSQL is running: `docker ps | grep postgres`
-- Verify credentials in .env match docker-compose.yml
+- Verify credentials in .env match docker compose.yml
 - Check DB_HOST (use 'localhost' locally, 'postgres' in Docker)
 
 **MinIO Connection Failed:**
@@ -833,7 +833,7 @@ DEBUG=sequelize:*
 
 ```bash
 # Docker
-docker-compose logs -f backend
+docker compose logs -f backend
 
 # Systemd
 journalctl -u 10mp-backend -f

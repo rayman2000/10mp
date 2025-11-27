@@ -404,6 +404,47 @@ app.post('/api/admin/activate-kiosk', async (req, res) => {
   }
 });
 
+// POST /api/admin/deny-kiosk - Admin denies kiosk by token
+app.post('/api/admin/deny-kiosk', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: 'token is required' });
+    }
+
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    const registration = await KioskRegistration.findOne({ where: { token } });
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Kiosk not found' });
+    }
+
+    // Deny the kiosk
+    registration.status = 'denied';
+    registration.deniedAt = new Date();
+    await registration.save();
+
+    console.log(`Kiosk denied: ${registration.kioskId} (token: ${token})`);
+
+    res.json({
+      id: registration.id,
+      token: registration.token,
+      kioskId: registration.kioskId,
+      kioskName: registration.kioskName,
+      status: registration.status,
+      deniedAt: registration.deniedAt,
+      message: 'Kiosk denied successfully'
+    });
+  } catch (error) {
+    console.error('Error denying kiosk:', error);
+    res.status(500).json({ error: 'Failed to deny kiosk' });
+  }
+});
+
 // GET /api/admin/pending-kiosks - List pending kiosk registrations
 app.get('/api/admin/pending-kiosks', async (req, res) => {
   try {

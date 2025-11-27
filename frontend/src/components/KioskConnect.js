@@ -23,11 +23,6 @@ const generateKioskId = () => {
   return `kiosk-${timestamp}-${random}`;
 };
 
-// Format token for display (XXXX-XXXX-XXXX-XXXX)
-const formatToken = (token) => {
-  return token.match(/.{1,4}/g).join('-').toUpperCase();
-};
-
 const KioskConnect = ({ onConnect }) => {
   const [token, setToken] = useState('');
   const [kioskId, setKioskId] = useState('');
@@ -116,6 +111,10 @@ const KioskConnect = ({ onConnect }) => {
           if (onConnect) {
             onConnect({ sessionId: data.sessionId });
           }
+        } else if (data.status === 'denied') {
+          // Kiosk has been denied
+          setStatus('denied');
+          clearInterval(pollIntervalRef.current);
         }
       } catch (err) {
         console.error('Error checking kiosk status:', err);
@@ -146,29 +145,19 @@ const KioskConnect = ({ onConnect }) => {
 
         {status === 'waiting' && (
           <div className="kiosk-waiting">
-            <div className="kiosk-instruction">
-              Enter this code in the Admin Panel to activate this kiosk:
-            </div>
-
-            <div className="kiosk-token-display">
-              {formatToken(token)}
-            </div>
-
-            <div className="kiosk-info">
-              <div className="kiosk-info-item">
-                <span className="kiosk-info-label">Kiosk ID:</span>
-                <span className="kiosk-info-value">{kioskId}</span>
-              </div>
-            </div>
-
             <div className="kiosk-pulse">
               <div className="pulse-dot"></div>
-              <span>Waiting for admin activation...</span>
+              <span>Waiting for activation...</span>
             </div>
 
             <div className="kiosk-help">
-              <p>An administrator must enter the code above in the Admin Panel to activate this kiosk.</p>
-              <p className="kiosk-help-note">This kiosk will automatically connect once activated.</p>
+              <p>Contact an organizer to activate this game.</p>
+              <p className="kiosk-help-note">The game will start automatically once activated.</p>
+            </div>
+
+            <div className="kiosk-id-display">
+              <span className="kiosk-id-label">Kiosk ID:</span>
+              <span className="kiosk-id-value">{kioskId}</span>
             </div>
           </div>
         )}
@@ -178,6 +167,14 @@ const KioskConnect = ({ onConnect }) => {
             <div className="kiosk-success">✓</div>
             <p className="kiosk-success-text">Kiosk Activated!</p>
             <p>Connecting to game...</p>
+          </div>
+        )}
+
+        {status === 'denied' && (
+          <div className="kiosk-status">
+            <div className="kiosk-error-icon">✕</div>
+            <p className="kiosk-error-text">Access Denied</p>
+            <p>Contact an organizer for assistance.</p>
           </div>
         )}
 

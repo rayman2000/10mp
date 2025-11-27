@@ -173,6 +173,26 @@ const AdminPanel = () => {
     }
   };
 
+  // Deny kiosk
+  const handleDenyKiosk = async (token, kioskName) => {
+    if (!window.confirm(`Deny kiosk: ${kioskName || token}?\n\nThis kiosk will be blocked from connecting.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMessage(`Denying kiosk: ${kioskName || token}...`);
+
+      await kioskApi.denyKiosk(token);
+      setMessage(`Kiosk denied: ${kioskName || token}`);
+      await fetchData();
+    } catch (error) {
+      setMessage(`Error denying kiosk: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Format timestamp
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -331,13 +351,20 @@ const AdminPanel = () => {
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleActivateKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId)}
-                    className="admin-button-success"
-                    style={{ marginTop: '10px' }}
-                  >
-                    Activate
-                  </button>
+                  <div className="kiosk-actions" style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={() => handleActivateKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId)}
+                      className="admin-button-success"
+                    >
+                      Activate
+                    </button>
+                    <button
+                      onClick={() => handleDenyKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId)}
+                      className="admin-button-danger"
+                    >
+                      Deny
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

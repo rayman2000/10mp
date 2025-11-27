@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── backend/           # Node.js/Express API server
 │   ├── models/       # Sequelize database models
 │   ├── migrations/   # Database migrations
-│   ├── docker-compose.yml  # Docker setup with PostgreSQL
+│   ├── docker compose.yml  # Docker setup with PostgreSQL
 │   ├── Dockerfile    # Production container
 │   ├── Dockerfile.dev # Development container
 │   ├── .env.docker   # Docker environment variables

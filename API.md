@@ -912,4 +912,4 @@ For issues or questions:
 - Check the main [README.md](./README.md)
 - Review [Troubleshooting Guide](./README.md#troubleshooting)
 - Ensure PostgreSQL and MinIO are running
-- Check Docker logs: `docker-compose logs -f`
+- Check Docker logs: `docker compose logs -f`

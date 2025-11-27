@@ -57,70 +57,6 @@
   padding: 20px;
 }
 
-.kiosk-instruction {
-  font-size: 24px;
-  color: #333;
-  margin-bottom: 30px;
-  font-weight: 500;
-}
-
-.kiosk-token-display {
-  font-family: 'Courier New', monospace;
-  font-size: 56px;
-  font-weight: bold;
-  color: #667eea;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  padding: 30px 20px;
-  margin: 20px 0;
-  border: 4px dashed #667eea;
-  border-radius: 16px;
-  letter-spacing: 8px;
-  animation: pulse-border 2s ease-in-out infinite;
-}
-
-@keyframes pulse-border {
-  0%, 100% {
-    border-color: #667eea;
-    box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
-  }
-  50% {
-    border-color: #764ba2;
-    box-shadow: 0 0 40px rgba(118, 75, 162, 0.5);
-  }
-}
-
-.kiosk-info {
-  margin: 30px 0;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 12px;
-}
-
-.kiosk-info-item {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 15px;
-  font-size: 16px;
-}
-
-.kiosk-info-label {
-  font-weight: 600;
-  color: #666;
-}
-
-.kiosk-info-value {
-  font-family: 'Courier New', monospace;
-  color: #333;
-  background: white;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
 .kiosk-pulse {
   display: flex;
   align-items: center;
@@ -171,6 +107,29 @@
   font-style: italic;
 }
 
+.kiosk-id-display {
+  margin-top: 30px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #666;
+}
+
+.kiosk-id-label {
+  font-weight: 600;
+  margin-right: 10px;
+}
+
+.kiosk-id-value {
+  font-family: 'Courier New', monospace;
+  color: #333;
+  background: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
 .kiosk-success {
   font-size: 80px;
   color: #4caf50;
@@ -181,6 +140,19 @@
   font-size: 32px;
   font-weight: 600;
   color: #4caf50;
+  margin: 20px 0;
+}
+
+.kiosk-error-icon {
+  font-size: 80px;
+  color: #e53e3e;
+  margin-bottom: 20px;
+}
+
+.kiosk-error-text {
+  font-size: 32px;
+  font-weight: 600;
+  color: #e53e3e;
   margin: 20px 0;
 }
 
@@ -225,14 +197,5 @@
 
   .kiosk-title {
     font-size: 36px;
-  }
-
-  .kiosk-token-display {
-    font-size: 36px;
-    letter-spacing: 4px;
-  }
-
-  .kiosk-instruction {
-    font-size: 18px;
   }
 }

@@ -62,11 +62,11 @@ Place your ROM files in `frontend/public/emulator/`:
 cd backenddocker0
 
 # Start PostgreSQL + MinIO + Backend
-docker-compose up -d
+docker compose up -d
 
 # Migrations run automatically on startup
 # View logs
-docker-compose logs -f
+docker compose logs -f
 ```
 
 Backend will be available at `http://localhost:3001`
@@ -228,7 +228,7 @@ Navigate to `http://localhost:3002` (or your configured admin URL), then login w
 │   ├── utils/            # Utilities
 │   │   ├── kioskToken.js            # Token generation
 │   │   └── dbCheck.js               # Smart initialization
-│   └── docker-compose.yml
+│   └── docker compose.yml
 └── package.json          # Root workspace
 ```
 
@@ -359,13 +359,13 @@ DB_PASSWORD=secure-database-password
 - Check PostgreSQL is running: `docker ps | grep postgres`
 - Check database exists: `docker exec tenmp-postgres psql -U tenmp_user -d tenmp_db -c '\l'`
 - Check migrations: `docker exec tenmp-backend npm run db:migrate`
-- Check logs: `docker-compose logs backend`
+- Check logs: `docker compose logs backend`
 
 ### MinIO connection errors
 
 - Verify MinIO is running: `docker ps | grep minio`
 - Check MinIO console: `http://localhost:9001`
-- Verify credentials in `.env` match docker-compose
+- Verify credentials in `.env` match docker compose
 - Check bucket exists: Should see `game-saves` in console
 
 ### Frontend can't connect
