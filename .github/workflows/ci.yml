@@ -46,9 +46,6 @@ jobs:
             (cd backend && npm install)
           fi
 
-          echo "Backend: building Docker image from backend/Dockerfile"
-          docker build -f backend/Dockerfile -t backend:ci backend
-
 
       - name: Admin
         run: |
