@@ -1,5 +1,5 @@
 # Development stage
-FROM node:22-alpine AS development
+FROM node:25-alpine AS development
 
 # Install curl for health checks
 RUN apk add --no-cache curl
@@ -30,7 +30,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["npm", "run", "dev"]
 
 # Production stage
-FROM node:22-alpine AS production
+FROM node:25-alpine AS production
 
 WORKDIR /app
 
