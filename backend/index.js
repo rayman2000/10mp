@@ -4,15 +4,31 @@ const cors = require('cors');
 const { sequelize } = require('./models');
 const GameTurn = require('./models').GameTurn;
 const GameSession = require('./models').GameSession;
-const { generateSessionCode, isValidSessionCode } = require('./utils/sessionCode');
+const KioskRegistration = require('./models').KioskRegistration;
+const { isValidKioskToken } = require('./utils/kioskToken');
 const saveStateStorage = require('./services/saveStateStorage');
+const { initializeDatabase } = require('./utils/dbCheck');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configure CORS with environment variable
+// Configure CORS with multiple origins (frontend + admin)
+const allowedOrigins = [
+  process.env.CORS_ORIGIN || 'http://localhost:3000',      // Frontend/Kiosk
+  process.env.CORS_ORIGIN_ADMIN || 'http://localhost:3002' // Admin console
+];
+
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 };
 app.use(cors(corsOptions));
@@ -60,76 +76,6 @@ app.get('/api/config', (req, res) => {
 
 // Session Management Endpoints
 
-// POST /api/session/init - Initialize or reset session with new code
-app.post('/api/session/init', async (req, res) => {
-  try {
-    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
-    const newCode = generateSessionCode();
-
-    // Find or create session
-    let session = await GameSession.findByPk(sessionId);
-
-    if (session) {
-      // Update existing session with new code
-      session.sessionCode = newCode;
-      session.lastActivityAt = new Date();
-      await session.save();
-    } else {
-      // Create new session
-      session = await GameSession.create({
-        sessionId: sessionId,
-        sessionCode: newCode,
-        isActive: false,
-        currentSaveStateUrl: null
-      });
-    }
-
-    console.log(`Session initialized: ${sessionId}, code: ${newCode}`);
-    res.json({
-      sessionId: session.sessionId,
-      sessionCode: session.sessionCode,
-      isActive: session.isActive
-    });
-  } catch (error) {
-    console.error('Error initializing session:', error);
-    res.status(500).json({ error: 'Failed to initialize session' });
-  }
-});
-
-// GET /api/session/connect/:code - Kiosk connects with code
-app.get('/api/session/connect/:code', async (req, res) => {
-  try {
-    const { code } = req.params;
-
-    if (!isValidSessionCode(code)) {
-      return res.status(400).json({ error: 'Invalid session code format' });
-    }
-
-    const session = await GameSession.findOne({
-      where: { sessionCode: code }
-    });
-
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found. Check your code.' });
-    }
-
-    // Update last activity
-    session.lastActivityAt = new Date();
-    await session.save();
-
-    console.log(`Kiosk connected to session: ${session.sessionId}`);
-    res.json({
-      sessionId: session.sessionId,
-      sessionCode: session.sessionCode,
-      isActive: session.isActive,
-      currentSaveStateUrl: session.currentSaveStateUrl
-    });
-  } catch (error) {
-    console.error('Error connecting to session:', error);
-    res.status(500).json({ error: 'Failed to connect to session' });
-  }
-});
-
 // GET /api/session/status - Get current session state
 app.get('/api/session/status', async (req, res) => {
   try {
@@ -142,7 +88,6 @@ app.get('/api/session/status', async (req, res) => {
 
     res.json({
       sessionId: session.sessionId,
-      sessionCode: session.sessionCode,
       isActive: session.isActive,
       currentSaveStateUrl: session.currentSaveStateUrl,
       lastActivityAt: session.lastActivityAt
@@ -160,7 +105,7 @@ app.post('/api/session/start', async (req, res) => {
     const session = await GameSession.findByPk(sessionId);
 
     if (!session) {
-      return res.status(404).json({ error: 'Session not found. Initialize first.' });
+      return res.status(404).json({ error: 'Session not found' });
     }
 
     session.isActive = true;
@@ -293,6 +238,163 @@ app.get('/api/session/saves', async (req, res) => {
   } catch (error) {
     console.error('Error listing save states:', error);
     res.status(500).json({ error: 'Failed to list save states' });
+  }
+});
+
+// Kiosk Registration Endpoints (New Token-Based System)
+
+// POST /api/kiosk/register - Kiosk registers with generated token
+app.post('/api/kiosk/register', async (req, res) => {
+  try {
+    const { token, kioskId, kioskName } = req.body;
+
+    if (!token || !kioskId) {
+      return res.status(400).json({ error: 'token and kioskId are required' });
+    }
+
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format. Must be 12-32 alphanumeric characters.' });
+    }
+
+    // Check if token already exists
+    const existing = await KioskRegistration.findOne({ where: { token } });
+    if (existing) {
+      // Token already registered, return existing registration
+      return res.json({
+        id: existing.id,
+        token: existing.token,
+        status: existing.status,
+        sessionId: existing.sessionId,
+        message: 'Kiosk already registered'
+      });
+    }
+
+    // Create new registration
+    const registration = await KioskRegistration.create({
+      token,
+      kioskId,
+      kioskName: kioskName || null,
+      status: 'pending',
+      registeredAt: new Date()
+    });
+
+    console.log(`Kiosk registered: ${kioskId} with token: ${token}`);
+
+    res.status(201).json({
+      id: registration.id,
+      token: registration.token,
+      status: registration.status,
+      message: 'Kiosk registered. Waiting for admin activation.'
+    });
+  } catch (error) {
+    console.error('Error registering kiosk:', error);
+    res.status(500).json({ error: 'Failed to register kiosk' });
+  }
+});
+
+// GET /api/kiosk/status/:token - Kiosk checks activation status
+app.get('/api/kiosk/status/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    const registration = await KioskRegistration.findOne({ where: { token } });
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Kiosk not registered' });
+    }
+
+    // Update last heartbeat
+    registration.lastHeartbeat = new Date();
+    await registration.save();
+
+    res.json({
+      status: registration.status,
+      sessionId: registration.sessionId,
+      activatedAt: registration.activatedAt,
+      isActive: registration.status === 'active'
+    });
+  } catch (error) {
+    console.error('Error checking kiosk status:', error);
+    res.status(500).json({ error: 'Failed to check status' });
+  }
+});
+
+// POST /api/admin/activate-kiosk - Admin activates kiosk by token
+app.post('/api/admin/activate-kiosk', async (req, res) => {
+  try {
+    const { token, sessionId } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: 'token is required' });
+    }
+
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    const registration = await KioskRegistration.findOne({ where: { token } });
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Kiosk not found' });
+    }
+
+    // Activate the kiosk
+    registration.status = 'active';
+    registration.sessionId = sessionId || process.env.DEFAULT_SESSION_ID || 'main-game';
+    registration.activatedAt = new Date();
+    await registration.save();
+
+    console.log(`Kiosk activated: ${registration.kioskId} (token: ${token})`);
+
+    res.json({
+      id: registration.id,
+      token: registration.token,
+      kioskId: registration.kioskId,
+      kioskName: registration.kioskName,
+      status: registration.status,
+      sessionId: registration.sessionId,
+      activatedAt: registration.activatedAt,
+      message: 'Kiosk activated successfully'
+    });
+  } catch (error) {
+    console.error('Error activating kiosk:', error);
+    res.status(500).json({ error: 'Failed to activate kiosk' });
+  }
+});
+
+// GET /api/admin/pending-kiosks - List pending kiosk registrations
+app.get('/api/admin/pending-kiosks', async (req, res) => {
+  try {
+    const { status = 'pending' } = req.query;
+
+    const whereClause = status === 'all' ? {} : { status };
+
+    const kiosks = await KioskRegistration.findAll({
+      where: whereClause,
+      order: [['registeredAt', 'DESC']],
+      limit: 50
+    });
+
+    res.json({
+      kiosks: kiosks.map(k => ({
+        id: k.id,
+        token: k.token,
+        kioskId: k.kioskId,
+        kioskName: k.kioskName,
+        status: k.status,
+        sessionId: k.sessionId,
+        registeredAt: k.registeredAt,
+        activatedAt: k.activatedAt,
+        lastHeartbeat: k.lastHeartbeat
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching pending kiosks:', error);
+    res.status(500).json({ error: 'Failed to fetch kiosks' });
   }
 });
 
@@ -470,9 +572,18 @@ app.get('/api/stats', async (req, res) => {
 
 const startServer = async () => {
   try {
-    await sequelize.authenticate();
-    console.log('Database connection established successfully.');
-    console.log('Run migrations with: npm run db:migrate');
+    // Initialize database (checks tables, runs migrations if needed)
+    console.log('Initializing database...');
+    const dbResult = await initializeDatabase(true);
+
+    if (!dbResult.success) {
+      console.error('Database initialization failed:', dbResult.message);
+      process.exit(1);
+    }
+
+    if (dbResult.ranMigrations) {
+      console.log('Database migrations completed automatically.');
+    }
 
     // Initialize MinIO storage
     console.log('Initializing MinIO storage...');

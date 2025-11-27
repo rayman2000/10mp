@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { sessionApi, gameApi } from '../services/api';
+import { sessionApi, gameApi, configApi, kioskApi } from '../services/adminApi';
 import './AdminPanel.css';
 
-const AdminPanel = ({ config, onClose }) => {
+const AdminPanel = () => {
+  const [config, setConfig] = useState(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -10,22 +11,38 @@ const AdminPanel = ({ config, onClose }) => {
   const [sessionStatus, setSessionStatus] = useState(null);
   const [saves, setSaves] = useState([]);
   const [stats, setStats] = useState(null);
+  const [pendingKiosks, setPendingKiosks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Fetch session status, saves, and stats
+  // Fetch config on mount
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const configData = await configApi.getConfig();
+        setConfig(configData);
+      } catch (error) {
+        console.error('Failed to load config:', error);
+      }
+    };
+    loadConfig();
+  }, []);
+
+  // Fetch session status, saves, stats, and pending kiosks
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [sessionData, savesData, statsData] = await Promise.all([
+      const [sessionData, savesData, statsData, kiosksData] = await Promise.all([
         sessionApi.getSessionStatus(),
         sessionApi.listSaveStates(),
-        gameApi.getStats()
+        gameApi.getStats(),
+        kioskApi.getPendingKiosks('all')
       ]);
 
       setSessionStatus(sessionData);
       setSaves(savesData.saves || []);
       setStats(statsData);
+      setPendingKiosks(kiosksData.kiosks || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       setMessage('Error loading data');
@@ -52,20 +69,6 @@ const AdminPanel = ({ config, onClose }) => {
     } else {
       setAuthError('Invalid password');
       setPassword('');
-    }
-  };
-
-  // Generate new session code
-  const handleGenerateCode = async () => {
-    try {
-      setLoading(true);
-      const result = await sessionApi.initSession();
-      setMessage(`New session code: ${result.sessionCode}`);
-      await fetchData();
-    } catch (error) {
-      setMessage('Error generating code');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -120,6 +123,26 @@ const AdminPanel = ({ config, onClose }) => {
     }
   };
 
+  // Activate kiosk
+  const handleActivateKiosk = async (token, kioskName) => {
+    if (!window.confirm(`Activate kiosk: ${kioskName || token}?\n\nThis will allow the kiosk to connect and play.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMessage(`Activating kiosk: ${kioskName || token}...`);
+
+      await kioskApi.activateKiosk(token, sessionStatus?.sessionId || 'main-game');
+      setMessage(`Kiosk activated: ${kioskName || token}`);
+      await fetchData();
+    } catch (error) {
+      setMessage(`Error activating kiosk: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Format timestamp
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -144,11 +167,6 @@ const AdminPanel = ({ config, onClose }) => {
             {authError && <div className="admin-error">{authError}</div>}
             <button type="submit" className="admin-button">Login</button>
           </form>
-          {onClose && (
-            <button onClick={onClose} className="admin-button-secondary">
-              Close
-            </button>
-          )}
         </div>
       </div>
     );
@@ -159,9 +177,6 @@ const AdminPanel = ({ config, onClose }) => {
     <div className="admin-panel">
       <div className="admin-header">
         <h1>10MP Admin Panel</h1>
-        {onClose && (
-          <button onClick={onClose} className="admin-close-btn">✕</button>
-        )}
       </div>
 
       {message && (
@@ -201,13 +216,6 @@ const AdminPanel = ({ config, onClose }) => {
           )}
 
           <div className="admin-actions">
-            <button
-              onClick={handleGenerateCode}
-              className="admin-button"
-              disabled={loading}
-            >
-              Generate New Code
-            </button>
             {sessionStatus?.isActive ? (
               <button
                 onClick={handleStopSession}
@@ -260,6 +268,64 @@ const AdminPanel = ({ config, onClose }) => {
             </div>
           ) : (
             <p>Loading stats...</p>
+          )}
+        </div>
+
+        {/* Kiosk Management */}
+        <div className="admin-card">
+          <h2>Kiosk Management</h2>
+          <div className="kiosk-stats">
+            <div className="stat-item">
+              <div className="stat-value">{pendingKiosks.filter(k => k.status === 'pending').length}</div>
+              <div className="stat-label">Pending</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-value">{pendingKiosks.filter(k => k.status === 'active').length}</div>
+              <div className="stat-label">Active</div>
+            </div>
+          </div>
+          {pendingKiosks.filter(k => k.status === 'pending').length > 0 ? (
+            <div className="kiosk-list">
+              <h3>Pending Activations:</h3>
+              {pendingKiosks.filter(k => k.status === 'pending').map(kiosk => (
+                <div key={kiosk.id} className="kiosk-item">
+                  <div className="kiosk-info">
+                    <div className="kiosk-token">{kiosk.token}</div>
+                    <div className="kiosk-details">
+                      {kiosk.kioskName && <div><strong>{kiosk.kioskName}</strong></div>}
+                      <div style={{ fontSize: '0.85em', color: '#888' }}>
+                        {kiosk.kioskId}
+                      </div>
+                      <div style={{ fontSize: '0.8em', color: '#666' }}>
+                        Registered: {formatDate(kiosk.registeredAt)}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleActivateKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId)}
+                    className="admin-button-success"
+                    style={{ marginTop: '10px' }}
+                  >
+                    Activate
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: '#888', marginTop: '10px' }}>No pending kiosks</p>
+          )}
+          {pendingKiosks.filter(k => k.status === 'active').length > 0 && (
+            <div className="kiosk-list" style={{ marginTop: '20px' }}>
+              <h3>Active Kiosks:</h3>
+              {pendingKiosks.filter(k => k.status === 'active').slice(0, 5).map(kiosk => (
+                <div key={kiosk.id} className="kiosk-item-active">
+                  <div>{kiosk.kioskName || kiosk.kioskId}</div>
+                  <div style={{ fontSize: '0.8em', color: '#888' }}>
+                    Activated: {formatDate(kiosk.activatedAt)}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

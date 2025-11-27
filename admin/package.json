@@ -1,0 +1,39 @@
+{
+  "name": "10mp-admin",
+  "version": "1.0.0",
+  "description": "10 Minute Pokemon admin console - Independent React app for managing game sessions, kiosks, and save states.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "dev": "react-scripts start"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "keywords": [
+    "pokemon",
+    "admin",
+    "dashboard",
+    "kiosk-management"
+  ],
+  "author": "",
+  "license": "GPL-3.0"
+}

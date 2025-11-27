@@ -4,8 +4,7 @@ import GameScreen from './components/GameScreen';
 import PlayerEntry from './components/PlayerEntry';
 import MessageInput from './components/MessageInput';
 import ErrorBoundary from './components/ErrorBoundary';
-import SessionConnect from './components/SessionConnect';
-import AdminPanel from './components/AdminPanel';
+import KioskConnect from './components/KioskConnect';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
@@ -15,7 +14,6 @@ function App() {
   const [previousMessage, setPreviousMessage] = useState('Welcome to 10 Minute Pokemon! Make some progress and have fun!');
   const [backendOnline, setBackendOnline] = useState(true);
   const [sessionData, setSessionData] = useState(null);
-  const [showAdmin, setShowAdmin] = useState(false);
   const [config, setConfig] = useState({
     turnDurationMinutes: 10,
     autoSaveIntervalMinutes: 1,
@@ -56,19 +54,6 @@ function App() {
     fetchConfig();
   }, []);
 
-  // Keyboard shortcut for admin panel (Ctrl+Shift+A)
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
-        e.preventDefault();
-        setShowAdmin(prev => !prev);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
   // Health check polling
   useEffect(() => {
     const checkBackendHealth = async () => {
@@ -95,14 +80,6 @@ function App() {
 
   return (
     <div className="App">
-      {/* Admin Panel Overlay */}
-      {showAdmin && (
-        <AdminPanel
-          config={config}
-          onClose={() => setShowAdmin(false)}
-        />
-      )}
-
       {/* Backend connectivity warning */}
       {!backendOnline && (
         <div style={{
@@ -134,7 +111,7 @@ function App() {
       {/* Overlay screens when not in game mode */}
       {currentScreen === 'connect' && (
         <div className="screen-overlay">
-          <SessionConnect onConnect={handleSessionConnect} />
+          <KioskConnect onConnect={handleSessionConnect} />
         </div>
       )}
 

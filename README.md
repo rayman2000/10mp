@@ -4,11 +4,11 @@ A collaborative Pokemon Fire Red experience where players take turns playing for
 
 ## Features
 
-- **Kiosk-Based Architecture**: Raspberry Pi kiosks connect to remote backend via 6-digit codes
+- **Kiosk-Based Architecture**: Raspberry Pi kiosks connect to remote backend via secure token-based registration
 - **Turn-Based Gameplay**: Configurable turn duration (default 10 minutes)
 - **Auto-Save System**: Automatic save states every 1 minute to MinIO blob storage
-- **Session Management**: Simple 6-digit codes for kiosk connection
-- **Admin Panel**: Web-based dashboard for session control and save state management
+- **Session Management**: Token-based kiosk activation with manual admin approval
+- **Admin Console**: Standalone web application for kiosk activation and save state management
 - **Game State Tracking**: Scrapes Pokemon Fire Red memory for badges, location, party data
 - **Save Point Restoration**: Admin can restore to any previous save state
 - **Statistics Dashboard**: Track total turns, unique players, and game progress
@@ -16,12 +16,20 @@ A collaborative Pokemon Fire Red experience where players take turns playing for
 ## Architecture
 
 ```
-[Raspberry Pi Kiosk]          [Remote Backend Server]
-   - Browser (kiosk)    <-->    - Express API (Node.js)
-   - ROM files                  - PostgreSQL (metadata)
-   - EmulatorJS                 - MinIO (save files)
-                                - Admin UI
+[Raspberry Pi Kiosk]          [Remote Backend Server]      [Admin Console]
+   - Browser (kiosk)    <-->    - Express API (Node.js) <--> - Admin web app
+   - ROM files                  - PostgreSQL (metadata)      - Kiosk activation
+   - EmulatorJS                 - MinIO (save files)         - Save management
 ```
+
+## Documentation
+
+This README provides a quick start guide and overview. For detailed technical documentation:
+
+- **[Frontend Documentation](./frontend/README.md)** - EmulatorJS integration, component architecture, memory scraping, React hooks
+- **[Backend Documentation](./backend/README.md)** - Database models, migrations, MinIO integration, Docker workflow, API implementation
+- **[Admin Console Documentation](./admin/README.md)** - Admin console features, kiosk activation, deployment
+- **[API Reference](./API.md)** - Complete REST API documentation with request/response examples
 
 ## Quick Start
 
@@ -56,9 +64,7 @@ cd backend
 # Start PostgreSQL + MinIO + Backend
 docker-compose up -d
 
-# Run migrations (first time only)
-docker exec tenmp-backend npm run db:migrate
-
+# Migrations run automatically on startup
 # View logs
 docker-compose logs -f
 ```
@@ -66,7 +72,7 @@ docker-compose logs -f
 Backend will be available at `http://localhost:3001`
 MinIO Console at `http://localhost:9001` (minioadmin / minioadmin123)
 
-### 4. Start Frontend
+### 4. Start Frontend (Kiosk)
 
 ```bash
 cd frontend
@@ -75,25 +81,24 @@ npm run dev
 
 Frontend will be available at `http://localhost:3000`
 
-### 5. Initialize Session
+### 5. Start Admin Console
 
-**Option A: Via Admin Panel**
-1. Press `Ctrl+Shift+A` in the frontend
-2. Login with password: `change-me-in-production`
-3. Click "Generate New Code"
-4. Note the 6-digit code
-
-**Option B: Via API**
 ```bash
-curl -X POST http://localhost:3001/api/session/init
-# Returns: {"sessionId":"main-game","sessionCode":"123456","isActive":false}
+cd admin
+npm run dev
 ```
 
-### 6. Connect Kiosk
+Admin console will be available at `http://localhost:3002`
 
-1. Open frontend in browser
-2. Enter the 6-digit code
-3. Start playing!
+### 6. Activate Kiosk
+
+1. Open kiosk frontend (`http://localhost:3000`)
+2. Kiosk generates and displays a 16-character token
+3. Open admin console (`http://localhost:3002`)
+4. Login with password: `change-me-in-production`
+5. Find the kiosk in "Pending Kiosks" section
+6. Click "Activate" to approve the kiosk
+7. Kiosk automatically connects and is ready for players!
 
 ## Configuration
 
@@ -113,6 +118,7 @@ DB_PASSWORD=password
 PORT=3001
 NODE_ENV=development
 CORS_ORIGIN=http://localhost:3000
+CORS_ORIGIN_ADMIN=http://localhost:3002
 
 # Gameplay
 TURN_DURATION_MINUTES=10
@@ -142,23 +148,39 @@ REACT_APP_API_URL=http://localhost:3001
 REACT_APP_ROM_PATH=/emulator/pokemon-firered.gba
 ```
 
-## Admin Panel
+### Admin Console Configuration
+
+Edit `admin/.env`:
+
+```env
+REACT_APP_API_URL=http://localhost:3001
+PORT=3002
+```
+
+## Admin Console
+
+The admin console is a standalone web application (separate from the kiosk frontend) for managing the 10MP system.
 
 ### Access
 
-Press `Ctrl+Shift+A` anywhere in the frontend app, then login with admin password.
+Navigate to `http://localhost:3002` (or your configured admin URL), then login with admin password.
 
 ### Features
 
+**Kiosk Management:**
+- View pending kiosk registrations
+- Activate kiosks manually for security
+- Monitor active kiosks
+- View kiosk tokens and identifiers
+
 **Session Management:**
-- Generate new 6-digit session codes
 - Start/Stop game sessions
 - View current session status
 - Monitor last activity
 
 **Save State Management:**
 - List all save points with metadata
-- Restore to any previous save
+- Restore to any previous save (planned)
 - View player name, location, badges, timestamp
 - See auto-saves and turn-end saves
 
@@ -172,15 +194,14 @@ Press `Ctrl+Shift+A` anywhere in the frontend app, then login with admin passwor
 
 ```
 10mp/
-├── frontend/              # React frontend
+├── frontend/              # React kiosk frontend
 │   ├── src/
 │   │   ├── components/   # React components
-│   │   │   ├── AdminPanel.js          # Admin dashboard
 │   │   │   ├── ErrorBoundary.js       # Error handling
 │   │   │   ├── GameScreen.js          # Main game screen
 │   │   │   ├── PlayerEntry.js         # Player name entry
 │   │   │   ├── MessageInput.js        # Turn-end message
-│   │   │   └── SessionConnect.js      # Kiosk connection
+│   │   │   └── KioskConnect.js        # Token-based connection
 │   │   ├── hooks/        # Custom hooks
 │   │   │   └── useEmulator.js         # Emulator management
 │   │   ├── services/     # API services
@@ -189,15 +210,24 @@ Press `Ctrl+Shift+A` anywhere in the frontend app, then login with admin passwor
 │   │       └── emulator.js            # EmulatorManager class
 │   └── public/
 │       └── emulator/     # ROM files (not included)
+├── admin/                 # Admin console (separate app)
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── AdminPanel.js          # Admin dashboard
+│   │   └── services/
+│   │       └── adminApi.js            # Admin API client
+│   └── package.json
 ├── backend/               # Node.js/Express API
 │   ├── models/           # Sequelize models
 │   │   ├── GameTurn.js              # Turn records
-│   │   └── GameSession.js           # Session management
+│   │   ├── GameSession.js           # Session management
+│   │   └── KioskRegistration.js     # Kiosk token registration
 │   ├── migrations/       # Database migrations
 │   ├── services/         # Business logic
 │   │   └── saveStateStorage.js      # MinIO integration
 │   ├── utils/            # Utilities
-│   │   └── sessionCode.js           # Code generation
+│   │   ├── kioskToken.js            # Token generation
+│   │   └── dbCheck.js               # Smart initialization
 │   └── docker-compose.yml
 └── package.json          # Root workspace
 ```
@@ -208,9 +238,13 @@ Press `Ctrl+Shift+A` anywhere in the frontend app, then login with admin passwor
 - `npm run dev` - Start both frontend and backend
 - `npm run install:all` - Install dependencies for all projects
 
-**Frontend:**
-- `npm run frontend:dev` - Start React development server
+**Frontend (Kiosk):**
+- `npm run frontend:dev` - Start React development server (port 3000)
 - `npm run frontend:build` - Build for production
+
+**Admin Console:**
+- `npm run admin:dev` - Start admin console (port 3002)
+- `npm run admin:build` - Build admin for production
 
 **Backend (Docker):**
 - `npm run docker:dev` - Start backend + PostgreSQL + MinIO in Docker
@@ -231,9 +265,15 @@ See [API.md](./API.md) for complete API documentation.
 **Config:** `GET /api/config`
 **Health:** `GET /health`
 
+**Kiosk Registration:**
+- `POST /api/kiosk/register` - Register kiosk with token
+- `GET /api/kiosk/status/:token` - Poll for activation status
+
+**Admin - Kiosk Management:**
+- `POST /api/admin/activate-kiosk` - Activate a kiosk
+- `GET /api/admin/pending-kiosks` - List pending/active kiosks
+
 **Sessions:**
-- `POST /api/session/init` - Generate new session code
-- `GET /api/session/connect/:code` - Connect with code
 - `GET /api/session/status` - Get session status
 - `POST /api/session/start` - Start session
 - `POST /api/session/stop` - Stop session
@@ -268,10 +308,23 @@ See [API.md](./API.md) for complete API documentation.
 | Column | Type | Description |
 |--------|------|-------------|
 | sessionId | STRING | Primary key |
-| sessionCode | STRING | 6-digit connection code |
 | currentSaveStateUrl | STRING | Latest save reference |
 | isActive | BOOLEAN | Session running status |
 | lastActivityAt | DATE | Last activity timestamp |
+
+### KioskRegistration Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| token | STRING | 16-char secure token |
+| kioskId | STRING | Kiosk identifier |
+| status | ENUM | pending, active, inactive |
+| sessionId | STRING | Associated session |
+| kioskName | STRING | Display name |
+| registeredAt | DATE | Registration timestamp |
+| activatedAt | DATE | Activation timestamp |
+| lastHeartbeat | DATE | Last status check |
 
 ## Deployment
 
@@ -344,10 +397,12 @@ GPL-3.0
 
 - Default passwords are for development only
 - Change all passwords before production deployment
-- Admin panel has basic password auth (consider adding proper auth for production)
+- Admin console has basic password auth (consider adding proper auth for production)
+- Token-based kiosk registration prevents brute-force attacks (replaced vulnerable 6-digit codes)
 - MinIO credentials should be rotated regularly
 - Save states may contain sensitive game data
-- CORS should be restricted to your frontend domain only
+- CORS should be restricted to your frontend and admin domains only
+- Admin console should be IP-restricted or VPN-protected in production
 
 ## Credits
 
