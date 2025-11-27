@@ -7,6 +7,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # Added grouping to combine npm updates in / into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/admin"
@@ -15,6 +20,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # Added grouping to combine npm updates in /admin into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/backend"
@@ -23,6 +33,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # Added grouping to combine npm updates in /backend into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -31,6 +46,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # Added grouping to combine npm updates in /frontend into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "docker"
     directory: "/backend"
@@ -39,6 +59,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # Added grouping to combine docker updates in /backend into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -47,3 +72,8 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # Added grouping to combine GitHub Actions updates in / into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
