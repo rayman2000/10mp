@@ -1,5 +1,5 @@
 # Development stage
-FROM node:22-alpine AS development
+FROM node:25-alpine AS development
 
 # Install curl for health checks
 RUN apk add --no-cache curl
