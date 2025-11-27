@@ -32,8 +32,23 @@ const AdminPanel = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [sessionData, savesData, statsData, kiosksData] = await Promise.all([
-        sessionApi.getSessionStatus(),
+
+      // Try to get session status first
+      let sessionData;
+      try {
+        sessionData = await sessionApi.getSessionStatus();
+      } catch (statusError) {
+        // If session doesn't exist (404), initialize it
+        if (statusError.response && statusError.response.status === 404) {
+          console.log('Session not found, initializing...');
+          sessionData = await sessionApi.initSession();
+          setMessage('Session initialized');
+        } else {
+          throw statusError;
+        }
+      }
+
+      const [savesData, statsData, kiosksData] = await Promise.all([
         sessionApi.listSaveStates(),
         gameApi.getStats(),
         kioskApi.getPendingKiosks('all')
@@ -45,7 +60,7 @@ const AdminPanel = () => {
       setPendingKiosks(kiosksData.kiosks || []);
     } catch (error) {
       console.error('Error fetching data:', error);
-      setMessage('Error loading data');
+      setMessage(`Error loading data: ${error.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
     }
@@ -76,11 +91,25 @@ const AdminPanel = () => {
   const handleStartSession = async () => {
     try {
       setLoading(true);
-      await sessionApi.startSession();
+
+      // Initialize session if it doesn't exist
+      try {
+        await sessionApi.startSession();
+      } catch (startError) {
+        if (startError.response && startError.response.status === 404) {
+          console.log('Session not found, initializing before starting...');
+          await sessionApi.initSession();
+          await sessionApi.startSession();
+        } else {
+          throw startError;
+        }
+      }
+
       setMessage('Session started');
       await fetchData();
     } catch (error) {
-      setMessage('Error starting session');
+      console.error('Error starting session:', error);
+      setMessage(`Error starting session: ${error.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
     }
@@ -94,7 +123,8 @@ const AdminPanel = () => {
       setMessage('Session stopped');
       await fetchData();
     } catch (error) {
-      setMessage('Error stopping session');
+      console.error('Error stopping session:', error);
+      setMessage(`Error stopping session: ${error.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
     }

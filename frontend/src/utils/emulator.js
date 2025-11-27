@@ -1,10 +1,12 @@
 // EmulatorJS integration utilities following official documentation
+// Global flag to track if script is loaded (persists across instances)
+window.__EMULATORJS_SCRIPT_LOADED__ = window.__EMULATORJS_SCRIPT_LOADED__ || false;
+
 class EmulatorManager {
   constructor(config = {}) {
     this.isRunning = false;
     this.gameState = null;
     this.saveStateInterval = null;
-    this.scriptLoaded = false;
     this.config = config;
     this.autoSaveIntervalMs = (config.autoSaveIntervalMinutes || 1) * 60000;
     this.autoSaveCallback = null; // Callback for auto-save uploads
@@ -18,20 +20,38 @@ class EmulatorManager {
 
   clearPreviousInstance() {
     console.log('Clearing previous EmulatorJS instance...');
-    
+
     // Clear the container first
     const container = document.getElementById('emulator-container');
     if (container) {
       container.innerHTML = '';
     }
-    
-    // Don't clear essential config variables, just cleanup
-    if (window.EJS_onLoaded) delete window.EJS_onLoaded;
-    if (window.EJS_onGameStart) delete window.EJS_onGameStart;
-    if (window.EJS_onError) delete window.EJS_onError;
-    
+
+    // Clear all EmulatorJS global variables and callbacks
+    const ejsGlobals = [
+      'EJS_player',
+      'EJS_core',
+      'EJS_gameUrl',
+      'EJS_pathtodata',
+      'EJS_volume',
+      'EJS_color',
+      'EJS_backgroundColor',
+      'EJS_startOnLoaded',
+      'EJS_controls',
+      'EJS_onLoaded',
+      'EJS_onGameStart',
+      'EJS_onError',
+      'EJS_emulator',
+      'EJS_gameManager'
+    ];
+
+    ejsGlobals.forEach(key => {
+      if (window[key] !== undefined) {
+        delete window[key];
+      }
+    });
+
     // Reset flags
-    this.scriptLoaded = false;
     this.isRunning = false;
   }
 
@@ -138,33 +158,37 @@ class EmulatorManager {
 
   loadEmulatorScript() {
     return new Promise((resolve, reject) => {
-      // For second cycle, just resolve if we think it's already loaded
-      if (this.scriptLoaded) {
-        console.log('EmulatorJS script marked as already loaded, proceeding...');
-        resolve();
+      // Check if script is already loaded globally
+      if (window.__EMULATORJS_SCRIPT_LOADED__) {
+        console.log('EmulatorJS script already loaded globally, reusing...');
+        // Wait a bit to ensure the library is ready
+        setTimeout(resolve, 500);
         return;
       }
-      
-      // Remove any existing script to force fresh load
+
+      // Check if script tag already exists in DOM
       const existingScript = document.getElementById('emulatorjs-loader');
       if (existingScript) {
-        console.log('Removing existing EmulatorJS script...');
-        existingScript.remove();
+        console.log('EmulatorJS script tag already in DOM, marking as loaded...');
+        window.__EMULATORJS_SCRIPT_LOADED__ = true;
+        setTimeout(resolve, 500);
+        return;
       }
-      
-      console.log('Loading fresh EmulatorJS script...');
+
+      console.log('Loading EmulatorJS script for the first time...');
       const script = document.createElement('script');
       script.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
       script.id = 'emulatorjs-loader';
-      
+
       script.onload = () => {
         console.log('EmulatorJS script loaded successfully');
-        this.scriptLoaded = true;
+        window.__EMULATORJS_SCRIPT_LOADED__ = true;
         setTimeout(resolve, 1000); // Longer delay for stability
       };
-      
+
       script.onerror = (e) => {
         console.error('Script loading failed:', e);
+        window.__EMULATORJS_SCRIPT_LOADED__ = false;
         reject(new Error('Failed to load EmulatorJS script from CDN'));
       };
       

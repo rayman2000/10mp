@@ -76,6 +76,44 @@ app.get('/api/config', (req, res) => {
 
 // Session Management Endpoints
 
+// POST /api/session/init - Initialize session (create if doesn't exist)
+app.post('/api/session/init', async (req, res) => {
+  try {
+    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+
+    // Generate a simple 6-digit session code
+    const generateSessionCode = () => {
+      return Math.floor(100000 + Math.random() * 900000).toString();
+    };
+
+    // Find or create the session
+    const [session, created] = await GameSession.findOrCreate({
+      where: { sessionId },
+      defaults: {
+        sessionId,
+        sessionCode: generateSessionCode(),
+        isActive: false,
+        currentSaveStateUrl: null,
+        lastActivityAt: new Date()
+      }
+    });
+
+    console.log(created ? `Session initialized: ${sessionId}` : `Session already exists: ${sessionId}`);
+
+    res.json({
+      sessionId: session.sessionId,
+      sessionCode: session.sessionCode,
+      isActive: session.isActive,
+      currentSaveStateUrl: session.currentSaveStateUrl,
+      created,
+      message: created ? 'Session created successfully' : 'Session already exists'
+    });
+  } catch (error) {
+    console.error('Error initializing session:', error);
+    res.status(500).json({ error: 'Failed to initialize session' });
+  }
+});
+
 // GET /api/session/status - Get current session state
 app.get('/api/session/status', async (req, res) => {
   try {
@@ -598,7 +636,7 @@ const startServer = async () => {
       console.log(`10MP Backend server running on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
       console.log(`API docs: http://localhost:${PORT}/api/game-turns`);
-      console.log(`Admin panel: Press Ctrl+Shift+A in frontend`);
+      console.log(`Admin console: http://localhost:3002 (separate application)`);
     });
   } catch (error) {
     console.error('Unable to start server:', error);

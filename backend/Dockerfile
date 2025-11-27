@@ -15,14 +15,11 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
+# Use the existing node user (uid:gid 1000:1000) which matches most host systems
+# This avoids permission issues with volume mounts in development
+RUN chown -R node:node /app
 
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
-
-USER nodejs
+USER node
 
 EXPOSE 3001
 
@@ -44,14 +41,10 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy source code
 COPY . .
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
+# Use the existing node user (uid:gid 1000:1000) for production
+RUN chown -R node:node /app
 
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
-
-USER nodejs
+USER node
 
 EXPOSE 3001
 

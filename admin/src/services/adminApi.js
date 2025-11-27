@@ -10,6 +10,33 @@ const api = axios.create({
   }
 });
 
+// Add response interceptor for better error logging
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response) {
+      // Server responded with error status
+      console.error('API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        url: error.config?.url
+      });
+    } else if (error.request) {
+      // Request made but no response received
+      console.error('API No Response:', {
+        message: 'No response received from server',
+        url: error.config?.url,
+        baseURL: API_BASE_URL
+      });
+    } else {
+      // Something else happened
+      console.error('API Request Error:', error.message);
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Configuration API
 export const configApi = {
   async getConfig() {
