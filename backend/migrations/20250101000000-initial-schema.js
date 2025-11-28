@@ -1,8 +1,8 @@
 'use strict';
 
-/** @type {import('sequelize-cli').Migration} */
 module.exports = {
-  async up (queryInterface, Sequelize) {
+  up: async (queryInterface, Sequelize) => {
+    // Create game_turns table
     await queryInterface.createTable('game_turns', {
       id: {
         type: Sequelize.UUID,
@@ -23,7 +23,8 @@ module.exports = {
       },
       playtime: {
         type: Sequelize.INTEGER,
-        allowNull: true
+        allowNull: true,
+        comment: 'Playtime in seconds'
       },
       money: {
         type: Sequelize.INTEGER,
@@ -31,38 +32,50 @@ module.exports = {
       },
       party_data: {
         type: Sequelize.JSONB,
-        allowNull: true
+        allowNull: true,
+        comment: 'JSON data containing Pokemon party information'
       },
       turn_duration: {
         type: Sequelize.INTEGER,
-        defaultValue: 600
+        defaultValue: 600,
+        comment: 'Turn duration in seconds (default 10 minutes)'
       },
       turn_ended_at: {
         type: Sequelize.DATE,
         defaultValue: Sequelize.NOW
       },
-      save_state: {
-        type: Sequelize.TEXT,
-        allowNull: true
+      save_state_url: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        comment: 'MinIO object key/URL for save state file'
       },
       created_at: {
-        allowNull: false,
         type: Sequelize.DATE,
+        allowNull: false,
         defaultValue: Sequelize.NOW
       },
       updated_at: {
-        allowNull: false,
         type: Sequelize.DATE,
+        allowNull: false,
         defaultValue: Sequelize.NOW
       }
     });
 
-    await queryInterface.addIndex('game_turns', ['player_name']);
-    await queryInterface.addIndex('game_turns', ['turn_ended_at']);
-    await queryInterface.addIndex('game_turns', ['created_at']);
+    // Add indexes
+    await queryInterface.addIndex('game_turns', ['player_name'], {
+      name: 'game_turns_player_name_idx'
+    });
+
+    await queryInterface.addIndex('game_turns', ['turn_ended_at'], {
+      name: 'game_turns_turn_ended_at_idx'
+    });
+
+    await queryInterface.addIndex('game_turns', ['created_at'], {
+      name: 'game_turns_created_at_idx'
+    });
   },
 
-  async down (queryInterface, Sequelize) {
+  down: async (queryInterface, Sequelize) => {
     await queryInterface.dropTable('game_turns');
   }
 };

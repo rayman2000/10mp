@@ -6,6 +6,7 @@ import './GameScreen.css';
 const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
   const containerRef = useRef(null);
   const [latestGameData, setLatestGameData] = useState(null);
+  const latestGameDataRef = useRef(null); // Use ref to avoid re-creating callbacks
   const [isSaving, setIsSaving] = useState(false);
   const [turnStartTime] = useState(() => new Date());
   const {
@@ -22,8 +23,8 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
 
   // Function to save turn data to backend
   const saveTurnData = useCallback(async () => {
-    if (!player || !latestGameData || isSaving) return;
-    
+    if (!player || !latestGameDataRef.current || isSaving) return;
+
     setIsSaving(true);
     try {
       const turnEndTime = new Date();
@@ -32,11 +33,11 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
 
       const turnData = {
         playerName: player,
-        location: latestGameData.location || 'Unknown',
-        badgeCount: latestGameData.badgeCount || 0,
-        playtime: latestGameData.playtime || 0,
-        money: latestGameData.money || 0,
-        partyData: latestGameData.partyData || [],
+        location: latestGameDataRef.current.location || 'Unknown',
+        badgeCount: latestGameDataRef.current.badgeCount || 0,
+        playtime: latestGameDataRef.current.playtime || 0,
+        money: latestGameDataRef.current.money || 0,
+        partyData: latestGameDataRef.current.partyData || [],
         turnDuration,
         saveState: saveState ? JSON.stringify(saveState) : null
       };
@@ -49,7 +50,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
     } finally {
       setIsSaving(false);
     }
-  }, [player, latestGameData, isSaving, turnStartTime, saveGame]);
+  }, [player, isSaving, turnStartTime, saveGame]);
 
   useEffect(() => {
     if (isLoaded) {
@@ -60,7 +61,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
         try {
           console.log('Auto-save triggered, uploading to backend...');
 
-          await saveApi.uploadSave(saveData, latestGameData || {});
+          await saveApi.uploadSave(saveData, latestGameDataRef.current || {});
           console.log('Auto-save uploaded successfully');
         } catch (error) {
           console.error('Failed to upload auto-save:', error);
@@ -69,7 +70,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
 
       setAutoSaveCallback(handleAutoSave);
     }
-  }, [isLoaded, setAutoSaveCallback, config, latestGameData]);
+  }, [isLoaded, setAutoSaveCallback, config]);
 
   // Focus emulator when becoming active to ensure immediate input
   useEffect(() => {
@@ -133,6 +134,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
         console.log('Scraped data result:', gameData);
         if (gameData) {
           setLatestGameData(gameData);
+          latestGameDataRef.current = gameData; // Update ref for callbacks
           await saveGameDataToFile(gameData, player);
         }
       } catch (error) {
@@ -148,6 +150,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
         console.log('Initial scrape result:', gameData);
         if (gameData) {
           setLatestGameData(gameData);
+          latestGameDataRef.current = gameData; // Update ref for callbacks
           await saveGameDataToFile(gameData, player);
         }
       } catch (error) {

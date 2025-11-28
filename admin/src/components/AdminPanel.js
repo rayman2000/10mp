@@ -55,9 +55,6 @@ const AdminPanel = () => {
   useEffect(() => {
     if (authenticated) {
       fetchData();
-      // Refresh data every 10 seconds
-      const interval = setInterval(fetchData, 10000);
-      return () => clearInterval(interval);
     }
   }, [authenticated]);
 
@@ -180,6 +177,14 @@ const AdminPanel = () => {
     <div className="admin-panel">
       <div className="admin-header">
         <h1>10MP Admin Panel</h1>
+        <button
+          onClick={fetchData}
+          disabled={loading}
+          className="admin-button"
+          style={{ marginLeft: 'auto' }}
+        >
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
 
       {message && (
