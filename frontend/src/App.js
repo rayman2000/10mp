@@ -13,25 +13,15 @@ function App() {
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [previousMessage, setPreviousMessage] = useState('Welcome to 10 Minute Pokemon! Make some progress and have fun!');
   const [backendOnline, setBackendOnline] = useState(true);
-  const [sessionData, setSessionData] = useState(null);
   const [config, setConfig] = useState({
     turnDurationMinutes: 10,
     autoSaveIntervalMinutes: 1,
-    defaultSessionId: 'main-game',
     adminPassword: 'change-me-in-production'
   });
 
-  // Handler for successful session connection
-  const handleSessionConnect = (session) => {
-    console.log('Session connected:', session);
-    setSessionData(session);
-
-    // TODO: Load save state if available
-    if (session.currentSaveStateUrl) {
-      console.log('Save state available:', session.currentSaveStateUrl);
-      // Will be implemented in next step
-    }
-
+  // Handler for successful kiosk activation
+  const handleKioskActivated = () => {
+    console.log('Kiosk activated');
     // Move to player entry screen
     setCurrentScreen('entry');
   };
@@ -111,7 +101,7 @@ function App() {
       {/* Overlay screens when not in game mode */}
       {currentScreen === 'connect' && (
         <div className="screen-overlay">
-          <KioskConnect onConnect={handleSessionConnect} />
+          <KioskConnect onConnect={handleKioskActivated} />
         </div>
       )}
 

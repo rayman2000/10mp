@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { sessionApi, gameApi, configApi, kioskApi } from '../services/adminApi';
+import { saveApi, gameApi, configApi, kioskApi } from '../services/adminApi';
 import './AdminPanel.css';
 
 const AdminPanel = () => {
@@ -8,7 +8,6 @@ const AdminPanel = () => {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
-  const [sessionStatus, setSessionStatus] = useState(null);
   const [saves, setSaves] = useState([]);
   const [stats, setStats] = useState(null);
   const [pendingKiosks, setPendingKiosks] = useState([]);
@@ -23,38 +22,25 @@ const AdminPanel = () => {
         setConfig(configData);
       } catch (error) {
         console.error('Failed to load config:', error);
+        setAuthError('Failed to connect to backend. Please check if the backend server is running.');
+        // Retry after 3 seconds
+        setTimeout(loadConfig, 3000);
       }
     };
     loadConfig();
   }, []);
 
-  // Fetch session status, saves, stats, and pending kiosks
+  // Fetch saves, stats, and pending kiosks
   const fetchData = async () => {
     try {
       setLoading(true);
 
-      // Try to get session status first
-      let sessionData;
-      try {
-        sessionData = await sessionApi.getSessionStatus();
-      } catch (statusError) {
-        // If session doesn't exist (404), initialize it
-        if (statusError.response && statusError.response.status === 404) {
-          console.log('Session not found, initializing...');
-          sessionData = await sessionApi.initSession();
-          setMessage('Session initialized');
-        } else {
-          throw statusError;
-        }
-      }
-
       const [savesData, statsData, kiosksData] = await Promise.all([
-        sessionApi.listSaveStates(),
+        saveApi.listSaves(),
         gameApi.getStats(),
         kioskApi.getPendingKiosks('all')
       ]);
 
-      setSessionStatus(sessionData);
       setSaves(savesData.saves || []);
       setStats(statsData);
       setPendingKiosks(kiosksData.kiosks || []);
@@ -78,6 +64,13 @@ const AdminPanel = () => {
   // Handle password authentication
   const handleLogin = (e) => {
     e.preventDefault();
+
+    // Check if config is loaded
+    if (!config) {
+      setAuthError('Loading configuration...');
+      return;
+    }
+
     if (password === config.adminPassword) {
       setAuthenticated(true);
       setAuthError('');
@@ -87,67 +80,22 @@ const AdminPanel = () => {
     }
   };
 
-  // Start session
-  const handleStartSession = async () => {
-    try {
-      setLoading(true);
-
-      // Initialize session if it doesn't exist
-      try {
-        await sessionApi.startSession();
-      } catch (startError) {
-        if (startError.response && startError.response.status === 404) {
-          console.log('Session not found, initializing before starting...');
-          await sessionApi.initSession();
-          await sessionApi.startSession();
-        } else {
-          throw startError;
-        }
-      }
-
-      setMessage('Session started');
-      await fetchData();
-    } catch (error) {
-      console.error('Error starting session:', error);
-      setMessage(`Error starting session: ${error.response?.data?.error || error.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Stop session
-  const handleStopSession = async () => {
-    try {
-      setLoading(true);
-      await sessionApi.stopSession();
-      setMessage('Session stopped');
-      await fetchData();
-    } catch (error) {
-      console.error('Error stopping session:', error);
-      setMessage(`Error stopping session: ${error.response?.data?.error || error.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Restore save point
+  // Restore save point (placeholder - actual restore logic would download and load the save)
   const handleRestoreSave = async (saveUrl) => {
-    if (!window.confirm(`Restore to this save point?\n${saveUrl}\n\nThis will replace the current game state.`)) {
+    if (!window.confirm(`Restore to this save point?\n${saveUrl}\n\nThis will download the save file.`)) {
       return;
     }
 
     try {
       setLoading(true);
-      setMessage(`Restoring save: ${saveUrl}...`);
+      setMessage(`Downloading save: ${saveUrl}...`);
 
-      // Update session's current save URL
-      const session = await sessionApi.getSessionStatus();
-      // Note: Actual restore logic would load the save from MinIO
-      // For now, we just update the reference
-      setMessage('Save point marked for restore. Reload game to apply.');
+      // Note: Actual restore logic would download the save from MinIO
+      // For now, just show a message
+      setMessage('Save download would be implemented here. Reload game with this save.');
       await fetchData();
     } catch (error) {
-      setMessage('Error restoring save');
+      setMessage('Error downloading save');
     } finally {
       setLoading(false);
     }
@@ -163,7 +111,7 @@ const AdminPanel = () => {
       setLoading(true);
       setMessage(`Activating kiosk: ${kioskName || token}...`);
 
-      await kioskApi.activateKiosk(token, sessionStatus?.sessionId || 'main-game');
+      await kioskApi.activateKiosk(token);
       setMessage(`Kiosk activated: ${kioskName || token}`);
       await fetchData();
     } catch (error) {
@@ -173,21 +121,23 @@ const AdminPanel = () => {
     }
   };
 
-  // Deny kiosk
-  const handleDenyKiosk = async (token, kioskName) => {
-    if (!window.confirm(`Deny kiosk: ${kioskName || token}?\n\nThis kiosk will be blocked from connecting.`)) {
+  // Disconnect/remove kiosk
+  const handleDisconnectKiosk = async (token, kioskName, isPending = false) => {
+    const action = isPending ? 'Remove' : 'Disconnect';
+
+    if (!window.confirm(`${action} kiosk: ${kioskName || token}?\n\n${isPending ? 'This will remove the pending registration.' : 'This will immediately disconnect the kiosk.'}`)) {
       return;
     }
 
     try {
       setLoading(true);
-      setMessage(`Denying kiosk: ${kioskName || token}...`);
+      setMessage(`${action}ing kiosk: ${kioskName || token}...`);
 
-      await kioskApi.denyKiosk(token);
-      setMessage(`Kiosk denied: ${kioskName || token}`);
+      await kioskApi.disconnectKiosk(token);
+      setMessage(`Kiosk ${action.toLowerCase()}d: ${kioskName || token}`);
       await fetchData();
     } catch (error) {
-      setMessage(`Error denying kiosk: ${error.message}`);
+      setMessage(`Error ${action.toLowerCase()}ing kiosk: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -213,9 +163,12 @@ const AdminPanel = () => {
               onChange={(e) => setPassword(e.target.value)}
               className="admin-password-input"
               autoFocus
+              disabled={!config}
             />
             {authError && <div className="admin-error">{authError}</div>}
-            <button type="submit" className="admin-button">Login</button>
+            <button type="submit" className="admin-button" disabled={!config}>
+              {config ? 'Login' : 'Loading...'}
+            </button>
           </form>
         </div>
       </div>
@@ -237,55 +190,6 @@ const AdminPanel = () => {
       )}
 
       <div className="admin-grid">
-        {/* Session Management */}
-        <div className="admin-card">
-          <h2>Session Management</h2>
-          {sessionStatus ? (
-            <div className="session-info">
-              <div className="info-row">
-                <span className="label">Session ID:</span>
-                <span className="value">{sessionStatus.sessionId}</span>
-              </div>
-              <div className="info-row">
-                <span className="label">Code:</span>
-                <span className="value session-code">{sessionStatus.sessionCode}</span>
-              </div>
-              <div className="info-row">
-                <span className="label">Status:</span>
-                <span className={`value status-badge ${sessionStatus.isActive ? 'active' : 'inactive'}`}>
-                  {sessionStatus.isActive ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-              <div className="info-row">
-                <span className="label">Last Activity:</span>
-                <span className="value">{formatDate(sessionStatus.lastActivityAt)}</span>
-              </div>
-            </div>
-          ) : (
-            <p>Loading session data...</p>
-          )}
-
-          <div className="admin-actions">
-            {sessionStatus?.isActive ? (
-              <button
-                onClick={handleStopSession}
-                className="admin-button-danger"
-                disabled={loading}
-              >
-                Stop Session
-              </button>
-            ) : (
-              <button
-                onClick={handleStartSession}
-                className="admin-button-success"
-                disabled={loading}
-              >
-                Start Session
-              </button>
-            )}
-          </div>
-        </div>
-
         {/* Quick Stats */}
         <div className="admin-card">
           <h2>Quick Stats</h2>
@@ -355,14 +259,16 @@ const AdminPanel = () => {
                     <button
                       onClick={() => handleActivateKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId)}
                       className="admin-button-success"
+                      disabled={loading}
                     >
                       Activate
                     </button>
                     <button
-                      onClick={() => handleDenyKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId)}
+                      onClick={() => handleDisconnectKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId, true)}
                       className="admin-button-danger"
+                      disabled={loading}
                     >
-                      Deny
+                      Remove
                     </button>
                   </div>
                 </div>
@@ -374,11 +280,25 @@ const AdminPanel = () => {
           {pendingKiosks.filter(k => k.status === 'active').length > 0 && (
             <div className="kiosk-list" style={{ marginTop: '20px' }}>
               <h3>Active Kiosks:</h3>
-              {pendingKiosks.filter(k => k.status === 'active').slice(0, 5).map(kiosk => (
-                <div key={kiosk.id} className="kiosk-item-active">
-                  <div>{kiosk.kioskName || kiosk.kioskId}</div>
-                  <div style={{ fontSize: '0.8em', color: '#888' }}>
-                    Activated: {formatDate(kiosk.activatedAt)}
+              {pendingKiosks.filter(k => k.status === 'active').map(kiosk => (
+                <div key={kiosk.id} className="kiosk-item" style={{ marginBottom: '15px' }}>
+                  <div className="kiosk-info">
+                    <div style={{ fontWeight: 'bold' }}>{kiosk.kioskName || kiosk.kioskId}</div>
+                    <div style={{ fontSize: '0.85em', color: '#888' }}>
+                      Token: {kiosk.token}
+                    </div>
+                    <div style={{ fontSize: '0.8em', color: '#666' }}>
+                      Activated: {formatDate(kiosk.activatedAt)}
+                    </div>
+                  </div>
+                  <div className="kiosk-actions" style={{ marginTop: '10px' }}>
+                    <button
+                      onClick={() => handleDisconnectKiosk(kiosk.token, kiosk.kioskName || kiosk.kioskId, false)}
+                      className="admin-button-danger"
+                      disabled={loading}
+                    >
+                      Disconnect
+                    </button>
                   </div>
                 </div>
               ))}

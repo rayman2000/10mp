@@ -49,18 +49,17 @@ class SaveStateStorage {
 
   /**
    * Save an auto-save state
-   * @param {string} sessionId - Session identifier
    * @param {Buffer|string} saveData - Save state data
    * @param {object} metadata - Game metadata (playerName, location, badges, etc.)
    */
-  async saveAutoSave(sessionId, saveData, metadata = {}) {
+  async saveAutoSave(saveData, metadata = {}) {
     if (!this.initialized) {
       throw new Error('MinIO storage not initialized');
     }
 
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const objectName = `${sessionId}/autosave-${timestamp}.sav`;
+      const objectName = `autosave-${timestamp}.sav`;
 
       // Convert data to Buffer if it's a string
       const buffer = Buffer.isBuffer(saveData)
@@ -93,18 +92,17 @@ class SaveStateStorage {
 
   /**
    * Save a turn-end state
-   * @param {string} sessionId - Session identifier
    * @param {string} turnId - Turn/GameTurn UUID
    * @param {Buffer|string} saveData - Save state data
    * @param {object} metadata - Game metadata
    */
-  async saveTurnSave(sessionId, turnId, saveData, metadata = {}) {
+  async saveTurnSave(turnId, saveData, metadata = {}) {
     if (!this.initialized) {
       throw new Error('MinIO storage not initialized');
     }
 
     try {
-      const objectName = `${sessionId}/turn-${turnId}.sav`;
+      const objectName = `turn-${turnId}.sav`;
 
       const buffer = Buffer.isBuffer(saveData)
         ? saveData
@@ -134,17 +132,16 @@ class SaveStateStorage {
   }
 
   /**
-   * Load the latest save state for a session
-   * @param {string} sessionId - Session identifier
+   * Load the latest save state
    * @returns {Promise<Buffer>} - Save state data
    */
-  async loadLatestSave(sessionId) {
+  async loadLatestSave() {
     if (!this.initialized) {
       throw new Error('MinIO storage not initialized');
     }
 
     try {
-      const saves = await this.listSaveStates(sessionId);
+      const saves = await this.listSaveStates();
 
       if (saves.length === 0) {
         return null;
@@ -152,7 +149,7 @@ class SaveStateStorage {
 
       // Get the most recent save
       const latestSave = saves[0];
-      return await this.loadSpecificSave(sessionId, latestSave.name);
+      return await this.loadSpecificSave(latestSave.name);
     } catch (error) {
       console.error('Failed to load latest save:', error);
       throw error;
@@ -160,21 +157,19 @@ class SaveStateStorage {
   }
 
   /**
-   * List all save states for a session
-   * @param {string} sessionId - Session identifier
+   * List all save states
    * @returns {Promise<Array>} - Array of save objects with metadata
    */
-  async listSaveStates(sessionId) {
+  async listSaveStates() {
     if (!this.initialized) {
       throw new Error('MinIO storage not initialized');
     }
 
     try {
-      const prefix = `${sessionId}/`;
       const objectsList = [];
 
       return new Promise((resolve, reject) => {
-        const stream = this.minioClient.listObjects(this.bucketName, prefix, true);
+        const stream = this.minioClient.listObjects(this.bucketName, '', true);
 
         stream.on('data', (obj) => {
           objectsList.push({
@@ -204,11 +199,10 @@ class SaveStateStorage {
 
   /**
    * Load a specific save state by its object key
-   * @param {string} sessionId - Session identifier (not used in current implementation but kept for consistency)
    * @param {string} objectKey - Full object key/name
    * @returns {Promise<Buffer>} - Save state data
    */
-  async loadSpecificSave(sessionId, objectKey) {
+  async loadSpecificSave(objectKey) {
     if (!this.initialized) {
       throw new Error('MinIO storage not initialized');
     }
@@ -238,6 +232,30 @@ class SaveStateStorage {
       });
     } catch (error) {
       console.error('Failed to load specific save:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get latest save metadata without downloading
+   * @returns {Promise<Object|null>} - Latest save metadata or null if none exists
+   */
+  async getLatestSave() {
+    if (!this.initialized) {
+      throw new Error('MinIO storage not initialized');
+    }
+
+    try {
+      const saves = await this.listSaveStates();
+
+      if (saves.length === 0) {
+        return null;
+      }
+
+      // Return the most recent save metadata
+      return saves[0];
+    } catch (error) {
+      console.error('Failed to get latest save:', error);
       throw error;
     }
   }

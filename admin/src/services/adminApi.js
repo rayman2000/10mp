@@ -50,54 +50,24 @@ export const configApi = {
   }
 };
 
-// Session Management API
-export const sessionApi = {
-  async initSession() {
+// Save State Management API
+export const saveApi = {
+  async listSaves() {
     try {
-      const response = await api.post('/api/session/init');
+      const response = await api.get('/api/saves');
       return response.data;
     } catch (error) {
-      console.error('Failed to initialize session:', error);
+      console.error('Failed to list saves:', error);
       throw error;
     }
   },
 
-  async getSessionStatus() {
+  async getLatestSave() {
     try {
-      const response = await api.get('/api/session/status');
+      const response = await api.get('/api/saves/latest');
       return response.data;
     } catch (error) {
-      console.error('Failed to get session status:', error);
-      throw error;
-    }
-  },
-
-  async startSession() {
-    try {
-      const response = await api.post('/api/session/start');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to start session:', error);
-      throw error;
-    }
-  },
-
-  async stopSession() {
-    try {
-      const response = await api.post('/api/session/stop');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to stop session:', error);
-      throw error;
-    }
-  },
-
-  async listSaveStates() {
-    try {
-      const response = await api.get('/api/session/saves');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to list save states:', error);
+      console.error('Failed to get latest save:', error);
       throw error;
     }
   }
@@ -150,11 +120,10 @@ export const kioskApi = {
     }
   },
 
-  async activateKiosk(token, sessionId) {
+  async activateKiosk(token) {
     try {
       const response = await api.post('/api/admin/activate-kiosk', {
-        token,
-        sessionId
+        token
       });
       return response.data;
     } catch (error) {
@@ -163,14 +132,14 @@ export const kioskApi = {
     }
   },
 
-  async denyKiosk(token) {
+  async disconnectKiosk(token) {
     try {
-      const response = await api.post('/api/admin/deny-kiosk', {
+      const response = await api.post('/api/admin/disconnect-kiosk', {
         token
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to deny kiosk:', error);
+      console.error('Failed to disconnect kiosk:', error);
       throw error;
     }
   }

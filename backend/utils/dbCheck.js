@@ -110,38 +110,41 @@ async function initializeDatabase(autoMigrate = true) {
 
     console.log('Database connection established successfully.');
 
-    // Check if required tables exist
-    const tableCheck = await checkRequiredTables();
+    if (!autoMigrate) {
+      // Check if required tables exist
+      const tableCheck = await checkRequiredTables();
 
-    if (tableCheck.allExist) {
-      console.log('All required database tables exist.');
+      if (!tableCheck.allExist) {
+        return {
+          success: false,
+          ranMigrations: false,
+          message: `Database tables missing: ${tableCheck.missing.join(', ')}. Run: npm run db:migrate`
+        };
+      }
+
       return {
         success: true,
         ranMigrations: false,
-        message: 'Database already initialized'
+        message: 'Database initialized (migrations skipped)'
       };
     }
 
-    // Tables missing
-    console.log(`Missing database tables: ${tableCheck.missing.join(', ')}`);
-
-    if (!autoMigrate) {
-      return {
-        success: false,
-        ranMigrations: false,
-        message: `Database tables missing: ${tableCheck.missing.join(', ')}. Run: npm run db:migrate`
-      };
-    }
-
-    // Auto-run migrations
-    console.log('Auto-migrating database...');
+    // Always run migrations on startup (they're idempotent - Sequelize tracks which have been run)
+    console.log('Running database migrations...');
     const migrated = await runMigrations();
 
     if (migrated) {
+      // Verify all tables now exist
+      const tableCheck = await checkRequiredTables();
+
+      if (!tableCheck.allExist) {
+        console.warn(`Warning: Some tables still missing after migrations: ${tableCheck.missing.join(', ')}`);
+      }
+
       return {
         success: true,
         ranMigrations: true,
-        message: 'Database initialized successfully (migrations ran)'
+        message: 'Database initialized successfully (migrations complete)'
       };
     } else {
       return {

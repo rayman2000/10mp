@@ -3,14 +3,18 @@ const express = require('express');
 const cors = require('cors');
 const { sequelize } = require('./models');
 const GameTurn = require('./models').GameTurn;
-const GameSession = require('./models').GameSession;
-const KioskRegistration = require('./models').KioskRegistration;
 const { isValidKioskToken } = require('./utils/kioskToken');
 const saveStateStorage = require('./services/saveStateStorage');
 const { initializeDatabase } = require('./utils/dbCheck');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// In-memory kiosk storage (no database)
+const kioskStore = {
+  pending: new Map(),  // token -> {kioskId, kioskName, registeredAt}
+  active: null         // {token, kioskId, kioskName, activatedAt} or null
+};
 
 // Configure CORS with multiple origins (frontend + admin)
 const allowedOrigins = [
@@ -69,184 +73,247 @@ app.get('/api/config', (req, res) => {
   res.json({
     turnDurationMinutes: parseInt(process.env.TURN_DURATION_MINUTES) || 10,
     autoSaveIntervalMinutes: parseInt(process.env.AUTO_SAVE_INTERVAL_MINUTES) || 1,
-    defaultSessionId: process.env.DEFAULT_SESSION_ID || 'main-game',
     adminPassword: process.env.ADMIN_PASSWORD || 'change-me-in-production'
   });
 });
 
-// Session Management Endpoints
+// Kiosk Registration Endpoints (New Token-Based System)
 
-// POST /api/session/init - Initialize session (create if doesn't exist)
-app.post('/api/session/init', async (req, res) => {
+// POST /api/kiosk/register - Kiosk registers with generated token (in-memory)
+app.post('/api/kiosk/register', async (req, res) => {
   try {
-    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
+    const { token, kioskId, kioskName } = req.body;
 
-    // Generate a simple 6-digit session code
-    const generateSessionCode = () => {
-      return Math.floor(100000 + Math.random() * 900000).toString();
+    if (!token || !kioskId) {
+      return res.status(400).json({ error: 'token and kioskId are required' });
+    }
+
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format. Must be 12-32 alphanumeric characters.' });
+    }
+
+    // Check if another kiosk is active
+    if (kioskStore.active) {
+      console.log(`Registration rejected: Another kiosk is already active (${kioskStore.active.kioskId})`);
+      return res.status(403).json({
+        error: 'Another kiosk is already active',
+        message: 'Only one kiosk can be active at a time. Please contact an organizer.'
+      });
+    }
+
+    // Check if already registered
+    if (kioskStore.pending.has(token)) {
+      return res.json({
+        token,
+        status: 'pending',
+        message: 'Kiosk already registered'
+      });
+    }
+
+    // Add to pending
+    kioskStore.pending.set(token, {
+      kioskId,
+      kioskName: kioskName || null,
+      registeredAt: new Date()
+    });
+
+    console.log(`Kiosk registered: ${kioskId} with token: ${token}`);
+
+    res.status(201).json({
+      token,
+      status: 'pending',
+      message: 'Kiosk registered. Waiting for admin activation.'
+    });
+  } catch (error) {
+    console.error('Error registering kiosk:', error);
+    res.status(500).json({ error: 'Failed to register kiosk' });
+  }
+});
+
+// GET /api/kiosk/status/:token - Kiosk checks activation status (in-memory)
+app.get('/api/kiosk/status/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    // Check if active
+    if (kioskStore.active && kioskStore.active.token === token) {
+      return res.json({
+        status: 'active',
+        activatedAt: kioskStore.active.activatedAt,
+        isActive: true
+      });
+    }
+
+    // Check if pending
+    if (kioskStore.pending.has(token)) {
+      return res.json({
+        status: 'pending',
+        isActive: false
+      });
+    }
+
+    // Not found (was disconnected)
+    res.status(404).json({ error: 'Kiosk not registered' });
+  } catch (error) {
+    console.error('Error checking kiosk status:', error);
+    res.status(500).json({ error: 'Failed to check status' });
+  }
+});
+
+// POST /api/admin/activate-kiosk - Admin activates kiosk by token (in-memory)
+app.post('/api/admin/activate-kiosk', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: 'token is required' });
+    }
+
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    // Check if there's already an active kiosk
+    if (kioskStore.active) {
+      return res.status(409).json({
+        error: 'Another kiosk is already active',
+        message: 'Only one kiosk can be active at a time. Please disconnect the current kiosk first.',
+        activeKiosk: {
+          kioskId: kioskStore.active.kioskId,
+          kioskName: kioskStore.active.kioskName
+        }
+      });
+    }
+
+    const kiosk = kioskStore.pending.get(token);
+
+    if (!kiosk) {
+      return res.status(404).json({ error: 'Kiosk not found' });
+    }
+
+    // Move from pending to active
+    kioskStore.active = {
+      token,
+      ...kiosk,
+      activatedAt: new Date()
     };
+    kioskStore.pending.delete(token);
 
-    // Find or create the session
-    const [session, created] = await GameSession.findOrCreate({
-      where: { sessionId },
-      defaults: {
-        sessionId,
-        sessionCode: generateSessionCode(),
-        isActive: false,
-        currentSaveStateUrl: null,
-        lastActivityAt: new Date()
-      }
-    });
-
-    console.log(created ? `Session initialized: ${sessionId}` : `Session already exists: ${sessionId}`);
+    console.log(`Kiosk activated: ${kiosk.kioskId} (token: ${token})`);
 
     res.json({
-      sessionId: session.sessionId,
-      sessionCode: session.sessionCode,
-      isActive: session.isActive,
-      currentSaveStateUrl: session.currentSaveStateUrl,
-      created,
-      message: created ? 'Session created successfully' : 'Session already exists'
+      token,
+      kioskId: kiosk.kioskId,
+      kioskName: kiosk.kioskName,
+      status: 'active',
+      activatedAt: kioskStore.active.activatedAt,
+      message: 'Kiosk activated successfully'
     });
   } catch (error) {
-    console.error('Error initializing session:', error);
-    res.status(500).json({ error: 'Failed to initialize session' });
+    console.error('Error activating kiosk:', error);
+    res.status(500).json({ error: 'Failed to activate kiosk' });
   }
 });
 
-// GET /api/session/status - Get current session state
-app.get('/api/session/status', async (req, res) => {
+// POST /api/admin/disconnect-kiosk - Admin disconnects/removes kiosk by token (in-memory)
+app.post('/api/admin/disconnect-kiosk', async (req, res) => {
   try {
-    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
-    const session = await GameSession.findByPk(sessionId);
+    const { token } = req.body;
 
-    if (!session) {
-      return res.status(404).json({ error: 'No active session' });
+    if (!token) {
+      return res.status(400).json({ error: 'token is required' });
     }
 
-    res.json({
-      sessionId: session.sessionId,
-      isActive: session.isActive,
-      currentSaveStateUrl: session.currentSaveStateUrl,
-      lastActivityAt: session.lastActivityAt
-    });
+    if (!isValidKioskToken(token)) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    // Remove from active
+    if (kioskStore.active && kioskStore.active.token === token) {
+      const kiosk = kioskStore.active;
+      kioskStore.active = null;
+
+      console.log(`Kiosk disconnected and removed: ${kiosk.kioskId} (token: ${token})`);
+
+      return res.json({
+        message: 'Kiosk disconnected successfully',
+        kioskId: kiosk.kioskId,
+        kioskName: kiosk.kioskName
+      });
+    }
+
+    // Remove from pending
+    if (kioskStore.pending.has(token)) {
+      const kiosk = kioskStore.pending.get(token);
+      kioskStore.pending.delete(token);
+
+      console.log(`Pending kiosk removed: ${kiosk.kioskId} (token: ${token})`);
+
+      return res.json({
+        message: 'Kiosk removed successfully',
+        kioskId: kiosk.kioskId,
+        kioskName: kiosk.kioskName
+      });
+    }
+
+    res.status(404).json({ error: 'Kiosk not found' });
   } catch (error) {
-    console.error('Error fetching session status:', error);
-    res.status(500).json({ error: 'Failed to fetch session status' });
+    console.error('Error disconnecting kiosk:', error);
+    res.status(500).json({ error: 'Failed to disconnect kiosk' });
   }
 });
 
-// POST /api/session/start - Admin starts game session
-app.post('/api/session/start', async (req, res) => {
+// GET /api/admin/pending-kiosks - List pending kiosk registrations (in-memory)
+app.get('/api/admin/pending-kiosks', async (req, res) => {
   try {
-    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
-    const session = await GameSession.findByPk(sessionId);
+    const kiosks = [];
 
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+    // Add pending kiosks
+    for (const [token, kiosk] of kioskStore.pending) {
+      kiosks.push({
+        token,
+        status: 'pending',
+        kioskId: kiosk.kioskId,
+        kioskName: kiosk.kioskName,
+        registeredAt: kiosk.registeredAt
+      });
     }
 
-    session.isActive = true;
-    session.lastActivityAt = new Date();
-    await session.save();
+    // Add active kiosk
+    if (kioskStore.active) {
+      kiosks.push({
+        token: kioskStore.active.token,
+        status: 'active',
+        kioskId: kioskStore.active.kioskId,
+        kioskName: kioskStore.active.kioskName,
+        registeredAt: kioskStore.active.registeredAt,
+        activatedAt: kioskStore.active.activatedAt
+      });
+    }
 
-    console.log(`Session started: ${sessionId}`);
-    res.json({
-      sessionId: session.sessionId,
-      isActive: session.isActive,
-      message: 'Session started successfully'
-    });
+    res.json({ kiosks });
   } catch (error) {
-    console.error('Error starting session:', error);
-    res.status(500).json({ error: 'Failed to start session' });
+    console.error('Error fetching pending kiosks:', error);
+    res.status(500).json({ error: 'Failed to fetch kiosks' });
   }
 });
 
-// POST /api/session/stop - Admin stops game session
-app.post('/api/session/stop', async (req, res) => {
+// Save State Endpoints
+
+// GET /api/saves - List all saves
+app.get('/api/saves', async (req, res) => {
   try {
-    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
-    const session = await GameSession.findByPk(sessionId);
-
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-
-    session.isActive = false;
-    session.lastActivityAt = new Date();
-    await session.save();
-
-    console.log(`Session stopped: ${sessionId}`);
-    res.json({
-      sessionId: session.sessionId,
-      isActive: session.isActive,
-      message: 'Session stopped successfully'
-    });
-  } catch (error) {
-    console.error('Error stopping session:', error);
-    res.status(500).json({ error: 'Failed to stop session' });
-  }
-});
-
-// POST /api/session/save - Save current game state to MinIO
-app.post('/api/session/save', async (req, res) => {
-  try {
-    const { sessionId, saveData, gameData } = req.body;
-
-    if (!sessionId || !saveData) {
-      return res.status(400).json({ error: 'sessionId and saveData are required' });
-    }
-
-    // Initialize MinIO storage if needed
-    if (!saveStateStorage.initialized) {
-      const initialized = await saveStateStorage.initialize();
-      if (!initialized) {
-        return res.status(500).json({ error: 'Failed to initialize storage' });
-      }
-    }
-
-    // Prepare metadata
-    const metadata = {
-      playerName: gameData?.playerName || 'unknown',
-      location: gameData?.location || 'unknown',
-      badgeCount: gameData?.badgeCount || 0
-    };
-
-    // Save to MinIO as auto-save
-    const saveUrl = await saveStateStorage.saveAutoSave(sessionId, saveData, metadata);
-
-    // Update session's current save state URL
-    const session = await GameSession.findByPk(sessionId);
-    if (session) {
-      session.currentSaveStateUrl = saveUrl;
-      session.lastActivityAt = new Date();
-      await session.save();
-    }
-
-    console.log(`Auto-save stored: ${saveUrl}`);
-    res.json({
-      success: true,
-      saveUrl: saveUrl,
-      message: 'Save state uploaded successfully'
-    });
-  } catch (error) {
-    console.error('Error saving game state:', error);
-    res.status(500).json({ error: 'Failed to save game state' });
-  }
-});
-
-// GET /api/session/saves - List all save points for restore
-app.get('/api/session/saves', async (req, res) => {
-  try {
-    const sessionId = process.env.DEFAULT_SESSION_ID || 'main-game';
-
     // Initialize MinIO storage if needed
     if (!saveStateStorage.initialized) {
       await saveStateStorage.initialize();
     }
 
     // Get list of saves from MinIO
-    const saves = await saveStateStorage.listSaveStates(sessionId);
+    const saves = await saveStateStorage.listSaveStates();
 
     // Also get GameTurn records for additional metadata
     const turns = await GameTurn.findAll({
@@ -269,211 +336,100 @@ app.get('/api/session/saves', async (req, res) => {
       };
     });
 
-    res.json({
-      sessionId: sessionId,
-      saves: savesWithMetadata
-    });
+    res.json({ saves: savesWithMetadata });
   } catch (error) {
     console.error('Error listing save states:', error);
     res.status(500).json({ error: 'Failed to list save states' });
   }
 });
 
-// Kiosk Registration Endpoints (New Token-Based System)
-
-// POST /api/kiosk/register - Kiosk registers with generated token
-app.post('/api/kiosk/register', async (req, res) => {
+// GET /api/saves/latest - Get latest save metadata
+app.get('/api/saves/latest', async (req, res) => {
   try {
-    const { token, kioskId, kioskName } = req.body;
-
-    if (!token || !kioskId) {
-      return res.status(400).json({ error: 'token and kioskId are required' });
+    // Initialize MinIO storage if needed
+    if (!saveStateStorage.initialized) {
+      await saveStateStorage.initialize();
     }
 
-    if (!isValidKioskToken(token)) {
-      return res.status(400).json({ error: 'Invalid token format. Must be 12-32 alphanumeric characters.' });
+    const latestSave = await saveStateStorage.getLatestSave();
+
+    if (!latestSave) {
+      return res.status(404).json({ error: 'No saves found' });
     }
 
-    // Check if token already exists
-    const existing = await KioskRegistration.findOne({ where: { token } });
-    if (existing) {
-      // Token already registered, return existing registration
-      return res.json({
-        id: existing.id,
-        token: existing.token,
-        status: existing.status,
-        sessionId: existing.sessionId,
-        message: 'Kiosk already registered'
-      });
-    }
-
-    // Create new registration
-    const registration = await KioskRegistration.create({
-      token,
-      kioskId,
-      kioskName: kioskName || null,
-      status: 'pending',
-      registeredAt: new Date()
-    });
-
-    console.log(`Kiosk registered: ${kioskId} with token: ${token}`);
-
-    res.status(201).json({
-      id: registration.id,
-      token: registration.token,
-      status: registration.status,
-      message: 'Kiosk registered. Waiting for admin activation.'
+    res.json({
+      objectKey: latestSave.name,
+      size: latestSave.size,
+      lastModified: latestSave.lastModified
     });
   } catch (error) {
-    console.error('Error registering kiosk:', error);
-    res.status(500).json({ error: 'Failed to register kiosk' });
+    console.error('Error getting latest save:', error);
+    res.status(500).json({ error: 'Failed to get latest save' });
   }
 });
 
-// GET /api/kiosk/status/:token - Kiosk checks activation status
-app.get('/api/kiosk/status/:token', async (req, res) => {
+// GET /api/saves/:objectKey/download - Download specific save
+app.get('/api/saves/:objectKey/download', async (req, res) => {
   try {
-    const { token } = req.params;
+    const { objectKey } = req.params;
 
-    if (!isValidKioskToken(token)) {
-      return res.status(400).json({ error: 'Invalid token format' });
+    // Initialize MinIO storage if needed
+    if (!saveStateStorage.initialized) {
+      await saveStateStorage.initialize();
     }
 
-    const registration = await KioskRegistration.findOne({ where: { token } });
+    const saveData = await saveStateStorage.loadSpecificSave(objectKey);
 
-    if (!registration) {
-      return res.status(404).json({ error: 'Kiosk not registered' });
+    if (!saveData) {
+      return res.status(404).json({ error: 'Save not found' });
     }
 
-    // Update last heartbeat
-    registration.lastHeartbeat = new Date();
-    await registration.save();
-
-    res.json({
-      status: registration.status,
-      sessionId: registration.sessionId,
-      activatedAt: registration.activatedAt,
-      isActive: registration.status === 'active'
-    });
+    // Send as downloadable file
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${objectKey}"`);
+    res.send(saveData);
   } catch (error) {
-    console.error('Error checking kiosk status:', error);
-    res.status(500).json({ error: 'Failed to check status' });
+    console.error('Error downloading save:', error);
+    res.status(500).json({ error: 'Failed to download save' });
   }
 });
 
-// POST /api/admin/activate-kiosk - Admin activates kiosk by token
-app.post('/api/admin/activate-kiosk', async (req, res) => {
+// POST /api/saves/upload - Upload save state
+app.post('/api/saves/upload', async (req, res) => {
   try {
-    const { token, sessionId } = req.body;
+    const { saveData, gameData } = req.body;
 
-    if (!token) {
-      return res.status(400).json({ error: 'token is required' });
+    if (!saveData) {
+      return res.status(400).json({ error: 'saveData is required' });
     }
 
-    if (!isValidKioskToken(token)) {
-      return res.status(400).json({ error: 'Invalid token format' });
+    // Initialize MinIO storage if needed
+    if (!saveStateStorage.initialized) {
+      const initialized = await saveStateStorage.initialize();
+      if (!initialized) {
+        return res.status(500).json({ error: 'Failed to initialize storage' });
+      }
     }
 
-    const registration = await KioskRegistration.findOne({ where: { token } });
+    // Prepare metadata
+    const metadata = {
+      playerName: gameData?.playerName || 'unknown',
+      location: gameData?.location || 'unknown',
+      badgeCount: gameData?.badgeCount || 0
+    };
 
-    if (!registration) {
-      return res.status(404).json({ error: 'Kiosk not found' });
-    }
+    // Save to MinIO as auto-save
+    const saveUrl = await saveStateStorage.saveAutoSave(saveData, metadata);
 
-    // Activate the kiosk
-    registration.status = 'active';
-    registration.sessionId = sessionId || process.env.DEFAULT_SESSION_ID || 'main-game';
-    registration.activatedAt = new Date();
-    await registration.save();
-
-    console.log(`Kiosk activated: ${registration.kioskId} (token: ${token})`);
-
+    console.log(`Auto-save stored: ${saveUrl}`);
     res.json({
-      id: registration.id,
-      token: registration.token,
-      kioskId: registration.kioskId,
-      kioskName: registration.kioskName,
-      status: registration.status,
-      sessionId: registration.sessionId,
-      activatedAt: registration.activatedAt,
-      message: 'Kiosk activated successfully'
+      success: true,
+      saveUrl: saveUrl,
+      message: 'Save state uploaded successfully'
     });
   } catch (error) {
-    console.error('Error activating kiosk:', error);
-    res.status(500).json({ error: 'Failed to activate kiosk' });
-  }
-});
-
-// POST /api/admin/deny-kiosk - Admin denies kiosk by token
-app.post('/api/admin/deny-kiosk', async (req, res) => {
-  try {
-    const { token } = req.body;
-
-    if (!token) {
-      return res.status(400).json({ error: 'token is required' });
-    }
-
-    if (!isValidKioskToken(token)) {
-      return res.status(400).json({ error: 'Invalid token format' });
-    }
-
-    const registration = await KioskRegistration.findOne({ where: { token } });
-
-    if (!registration) {
-      return res.status(404).json({ error: 'Kiosk not found' });
-    }
-
-    // Deny the kiosk
-    registration.status = 'denied';
-    registration.deniedAt = new Date();
-    await registration.save();
-
-    console.log(`Kiosk denied: ${registration.kioskId} (token: ${token})`);
-
-    res.json({
-      id: registration.id,
-      token: registration.token,
-      kioskId: registration.kioskId,
-      kioskName: registration.kioskName,
-      status: registration.status,
-      deniedAt: registration.deniedAt,
-      message: 'Kiosk denied successfully'
-    });
-  } catch (error) {
-    console.error('Error denying kiosk:', error);
-    res.status(500).json({ error: 'Failed to deny kiosk' });
-  }
-});
-
-// GET /api/admin/pending-kiosks - List pending kiosk registrations
-app.get('/api/admin/pending-kiosks', async (req, res) => {
-  try {
-    const { status = 'pending' } = req.query;
-
-    const whereClause = status === 'all' ? {} : { status };
-
-    const kiosks = await KioskRegistration.findAll({
-      where: whereClause,
-      order: [['registeredAt', 'DESC']],
-      limit: 50
-    });
-
-    res.json({
-      kiosks: kiosks.map(k => ({
-        id: k.id,
-        token: k.token,
-        kioskId: k.kioskId,
-        kioskName: k.kioskName,
-        status: k.status,
-        sessionId: k.sessionId,
-        registeredAt: k.registeredAt,
-        activatedAt: k.activatedAt,
-        lastHeartbeat: k.lastHeartbeat
-      }))
-    });
-  } catch (error) {
-    console.error('Error fetching pending kiosks:', error);
-    res.status(500).json({ error: 'Failed to fetch kiosks' });
+    console.error('Error saving game state:', error);
+    res.status(500).json({ error: 'Failed to save game state' });
   }
 });
 

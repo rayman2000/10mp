@@ -53,6 +53,14 @@ const KioskConnect = ({ onConnect }) => {
           })
         });
 
+        if (response.status === 403) {
+          // Another kiosk is already active
+          const errorData = await response.json();
+          setError(errorData.message || 'Another kiosk is already active');
+          setStatus('denied');
+          return;
+        }
+
         if (!response.ok) {
           throw new Error('Failed to register kiosk');
         }
@@ -64,7 +72,7 @@ const KioskConnect = ({ onConnect }) => {
           // Already activated (shouldn't happen on first registration)
           setStatus('activated');
           if (onConnect) {
-            onConnect({ sessionId: data.sessionId });
+            onConnect();
           }
         } else {
           // Start polling for activation
@@ -95,6 +103,14 @@ const KioskConnect = ({ onConnect }) => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/kiosk/status/${tokenToCheck}`);
 
+        if (response.status === 404) {
+          // Kiosk registration was deleted (disconnected by admin)
+          setStatus('denied');
+          setError('This kiosk has been disconnected by an organizer.');
+          clearInterval(pollIntervalRef.current);
+          return;
+        }
+
         if (!response.ok) {
           throw new Error('Failed to check kiosk status');
         }
@@ -109,12 +125,8 @@ const KioskConnect = ({ onConnect }) => {
 
           // Notify parent component
           if (onConnect) {
-            onConnect({ sessionId: data.sessionId });
+            onConnect();
           }
-        } else if (data.status === 'denied') {
-          // Kiosk has been denied
-          setStatus('denied');
-          clearInterval(pollIntervalRef.current);
         }
       } catch (err) {
         console.error('Error checking kiosk status:', err);
@@ -174,7 +186,7 @@ const KioskConnect = ({ onConnect }) => {
           <div className="kiosk-status">
             <div className="kiosk-error-icon">✕</div>
             <p className="kiosk-error-text">Access Denied</p>
-            <p>Contact an organizer for assistance.</p>
+            <p>{error || 'Another kiosk is already active. Contact an organizer for assistance.'}</p>
           </div>
         )}
 

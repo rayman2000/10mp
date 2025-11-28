@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEmulator } from '../hooks/useEmulator';
-import { gameApi, sessionApi } from '../services/api';
+import { gameApi, saveApi } from '../services/api';
 import './GameScreen.css';
 
 const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
@@ -58,10 +58,9 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
       // Set up auto-save callback to upload to backend
       const handleAutoSave = async (saveData) => {
         try {
-          const sessionId = config?.defaultSessionId || 'main-game';
           console.log('Auto-save triggered, uploading to backend...');
 
-          await sessionApi.saveGameState(sessionId, saveData, latestGameData || {});
+          await saveApi.uploadSave(saveData, latestGameData || {});
           console.log('Auto-save uploaded successfully');
         } catch (error) {
           console.error('Failed to upload auto-save:', error);
