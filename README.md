@@ -100,6 +100,72 @@ Admin console will be available at `http://localhost:3002`
 6. Click "Activate" to approve the kiosk
 7. Kiosk automatically connects and is ready for players!
 
+## Development with VS Code Dev Container
+
+For the easiest development setup, use VS Code's dev container feature. This provides a fully configured development environment with all dependencies, services, and tools pre-installed.
+
+### Prerequisites
+
+- [Visual Studio Code](https://code.visualstudio.com/)
+- Docker ([Docker Desktop](https://www.docker.com/products/docker-desktop) for Windows/Mac, or Docker Engine for Linux)
+- [Dev Containers Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+### Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd 10mp
+   ```
+
+2. **Open in VS Code:**
+   ```bash
+   code .
+   ```
+
+3. **Open in Dev Container:**
+   - Press `F1` or `Ctrl+Shift+P` (Windows/Linux) / `Cmd+Shift+P` (Mac)
+   - Type "Dev Containers: Reopen in Container"
+   - Select it and wait for the container to build
+
+4. **What happens automatically:**
+   - PostgreSQL database starts and initializes
+   - MinIO object storage starts
+   - All Node.js dependencies install (`npm run install:all`)
+   - Ports forward automatically (3000, 3001, 3002, 5432, 9000, 9001)
+
+5. **Place ROM files:**
+   - Even in the dev container, you need to add ROM files to `frontend/public/emulator/`:
+     - `pokemon-firered.gba`
+     - `gba_bios.bin` (optional)
+
+6. **Start development:**
+   ```bash
+   # In VS Code integrated terminal
+
+   # Terminal 1: Start backend
+   cd backend
+   npm run dev
+
+   # Terminal 2: Start frontend
+   cd frontend
+   npm start
+
+   # Terminal 3: Start admin console
+   cd admin
+   npm start
+   ```
+
+### Accessing Services
+
+When running in the dev container, services are available at:
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:3001`
+- Admin Console: `http://localhost:3002`
+- PostgreSQL: `localhost:5432`
+- MinIO Console: `http://localhost:9001`
+- MinIO API: `http://localhost:9000`
+
 ## Configuration
 
 ### Backend Configuration
