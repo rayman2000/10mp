@@ -3,7 +3,7 @@ import { useEmulator } from '../hooks/useEmulator';
 import { gameApi, saveApi } from '../services/api';
 import './GameScreen.css';
 
-const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
+const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, config }) => {
   const containerRef = useRef(null);
   const [latestGameData, setLatestGameData] = useState(null);
   const latestGameDataRef = useRef(null); // Use ref to avoid re-creating callbacks
@@ -17,7 +17,7 @@ const GameScreen = ({ player, isActive = true, onGameEnd, config }) => {
     scrapeData,
     saveGame,
     setAutoSaveCallback
-  } = useEmulator(config);
+  } = useEmulator(config, approved);
 
   console.log('GameScreen render:', { isLoaded, isRunning, error });
 

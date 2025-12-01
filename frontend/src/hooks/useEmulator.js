@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import EmulatorManager from '../utils/emulator';
 
-export const useEmulator = (config = {}) => {
+export const useEmulator = (config = {}, approved = false) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [gameData, setGameData] = useState(null);
@@ -10,17 +10,24 @@ export const useEmulator = (config = {}) => {
   const emulatorRef = useRef(null);
 
   useEffect(() => {
+    // Don't initialize emulator until approved
+    if (!approved) {
+      console.log('Emulator initialization blocked - waiting for admin approval');
+      return;
+    }
+
     let mounted = true;
 
     const initEmulator = async () => {
       try {
         if (!mounted) return;
 
+        console.log('Emulator initialization approved - loading ROM and emulator');
         emulatorRef.current = new EmulatorManager(config);
         const success = await emulatorRef.current.initialize();
-        
+
         if (!mounted) return;
-        
+
         if (success) {
           setIsLoaded(true);
           setError(null);
@@ -51,7 +58,7 @@ export const useEmulator = (config = {}) => {
       setIsRunning(false);
       setError(null);
     };
-  }, []);
+  }, [approved]);
 
   const startGame = () => {
     if (emulatorRef.current && isLoaded) {

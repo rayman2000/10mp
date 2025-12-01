@@ -59,7 +59,7 @@ Place your ROM files in `frontend/public/emulator/`:
 ### 3. Start Backend with Docker
 
 ```bash
-cd backenddocker0
+cd backend
 
 # Start PostgreSQL + MinIO + Backend
 docker compose up -d

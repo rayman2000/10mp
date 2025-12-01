@@ -13,6 +13,7 @@ function App() {
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [previousMessage, setPreviousMessage] = useState('Welcome to 10 Minute Pokemon! Make some progress and have fun!');
   const [backendOnline, setBackendOnline] = useState(true);
+  const [kioskApproved, setKioskApproved] = useState(false); // Track if kiosk has been approved
   const [config, setConfig] = useState({
     turnDurationMinutes: 10,
     autoSaveIntervalMinutes: 1,
@@ -22,6 +23,7 @@ function App() {
   // Handler for successful kiosk activation
   const handleKioskActivated = () => {
     console.log('Kiosk activated');
+    setKioskApproved(true); // Mark kiosk as approved
     // Move to player entry screen
     setCurrentScreen('entry');
   };
@@ -93,6 +95,7 @@ function App() {
         <GameScreen
           player={currentPlayer}
           isActive={currentScreen === 'game'}
+          approved={kioskApproved}
           onGameEnd={() => setCurrentScreen('message')}
           config={config}
         />
