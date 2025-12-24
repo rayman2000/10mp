@@ -65,16 +65,56 @@ const validateGameTurn = (req, res, next) => {
   next();
 };
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Admin session store (in-memory, resets on server restart)
+const adminSessions = new Set();
+
+// Generate random token
+const generateAdminToken = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+};
+
+// Admin authentication middleware
+const requireAdminAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Admin authentication required' });
+  }
+
+  const token = authHeader.substring(7);
+  if (!adminSessions.has(token)) {
+    return res.status(401).json({ error: 'Invalid or expired admin session' });
+  }
+
+  next();
+};
+
+// Admin authentication endpoint
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  const adminPassword = process.env.ADMIN_PASSWORD || 'change-me-in-production';
+
+  if (password === adminPassword) {
+    const token = generateAdminToken();
+    adminSessions.add(token);
+    res.json({ success: true, token });
+  } else {
+    res.status(401).json({ success: false, error: 'Invalid password' });
+  }
 });
 
-app.get('/api/config', (req, res) => {
-  res.json({
-    turnDurationMinutes: parseInt(process.env.TURN_DURATION_MINUTES) || 10,
-    autoSaveIntervalMinutes: parseInt(process.env.AUTO_SAVE_INTERVAL_MINUTES) || 1,
-    adminPassword: process.env.ADMIN_PASSWORD || 'change-me-in-production'
-  });
+// Admin logout endpoint
+app.post('/api/admin/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    adminSessions.delete(token);
+  }
+  res.json({ success: true });
 });
 
 // Kiosk Registration Endpoints (New Token-Based System)
@@ -165,7 +205,7 @@ app.get('/api/kiosk/status/:token', async (req, res) => {
 });
 
 // POST /api/admin/activate-kiosk - Admin activates kiosk by token (in-memory)
-app.post('/api/admin/activate-kiosk', async (req, res) => {
+app.post('/api/admin/activate-kiosk', requireAdminAuth, async (req, res) => {
   try {
     const { token } = req.body;
 
@@ -220,7 +260,7 @@ app.post('/api/admin/activate-kiosk', async (req, res) => {
 });
 
 // POST /api/admin/disconnect-kiosk - Admin disconnects/removes kiosk by token (in-memory)
-app.post('/api/admin/disconnect-kiosk', async (req, res) => {
+app.post('/api/admin/disconnect-kiosk', requireAdminAuth, async (req, res) => {
   try {
     const { token } = req.body;
 
@@ -268,7 +308,7 @@ app.post('/api/admin/disconnect-kiosk', async (req, res) => {
 });
 
 // GET /api/admin/pending-kiosks - List pending kiosk registrations (in-memory)
-app.get('/api/admin/pending-kiosks', async (req, res) => {
+app.get('/api/admin/pending-kiosks', requireAdminAuth, async (req, res) => {
   try {
     const kiosks = [];
 
@@ -299,6 +339,73 @@ app.get('/api/admin/pending-kiosks', async (req, res) => {
   } catch (error) {
     console.error('Error fetching pending kiosks:', error);
     res.status(500).json({ error: 'Failed to fetch kiosks' });
+  }
+});
+
+// POST /api/admin/restore-turn - Restore to a specific turn, invalidating newer turns
+app.post('/api/admin/restore-turn', requireAdminAuth, async (req, res) => {
+  try {
+    const { turnId } = req.body;
+
+    if (!turnId) {
+      return res.status(400).json({ error: 'turnId is required' });
+    }
+
+    // Find the turn to restore to
+    const restoreTurn = await GameTurn.findByPk(turnId);
+    if (!restoreTurn) {
+      return res.status(404).json({ error: 'Turn not found' });
+    }
+
+    if (!restoreTurn.saveStateUrl) {
+      return res.status(400).json({ error: 'Turn has no save state to restore' });
+    }
+
+    // Find all turns that are newer than the restore point and not already invalidated
+    const turnsToInvalidate = await GameTurn.findAll({
+      where: {
+        turnEndedAt: {
+          [require('sequelize').Op.gt]: restoreTurn.turnEndedAt
+        },
+        invalidatedAt: null
+      }
+    });
+
+    const now = new Date();
+    const invalidatedCount = turnsToInvalidate.length;
+
+    // Mark all newer turns as invalidated
+    if (invalidatedCount > 0) {
+      await GameTurn.update(
+        {
+          invalidatedAt: now,
+          invalidatedByRestoreToTurnId: turnId
+        },
+        {
+          where: {
+            id: turnsToInvalidate.map(t => t.id)
+          }
+        }
+      );
+    }
+
+    console.log(`Restored to turn ${turnId}, invalidated ${invalidatedCount} newer turns`);
+
+    res.json({
+      success: true,
+      restoredTurn: {
+        id: restoreTurn.id,
+        playerName: restoreTurn.playerName,
+        location: restoreTurn.location,
+        badgeCount: restoreTurn.badgeCount,
+        turnEndedAt: restoreTurn.turnEndedAt,
+        saveStateUrl: restoreTurn.saveStateUrl
+      },
+      invalidatedCount
+    });
+  } catch (error) {
+    console.error('Error restoring turn:', error);
+    res.status(500).json({ error: 'Failed to restore turn' });
   }
 });
 
@@ -343,24 +450,31 @@ app.get('/api/saves', async (req, res) => {
   }
 });
 
-// GET /api/saves/latest - Get latest save metadata
+// GET /api/saves/latest - Get latest valid (non-invalidated) save
 app.get('/api/saves/latest', async (req, res) => {
   try {
-    // Initialize MinIO storage if needed
-    if (!saveStateStorage.initialized) {
-      await saveStateStorage.initialize();
-    }
+    // Find the latest non-invalidated turn with a save state
+    const latestTurn = await GameTurn.findOne({
+      where: {
+        saveStateUrl: {
+          [require('sequelize').Op.ne]: null
+        },
+        invalidatedAt: null
+      },
+      order: [['turnEndedAt', 'DESC']]
+    });
 
-    const latestSave = await saveStateStorage.getLatestSave();
-
-    if (!latestSave) {
+    if (!latestTurn || !latestTurn.saveStateUrl) {
       return res.status(404).json({ error: 'No saves found' });
     }
 
     res.json({
-      objectKey: latestSave.name,
-      size: latestSave.size,
-      lastModified: latestSave.lastModified
+      turnId: latestTurn.id,
+      saveStateUrl: latestTurn.saveStateUrl,
+      playerName: latestTurn.playerName,
+      location: latestTurn.location,
+      badgeCount: latestTurn.badgeCount,
+      turnEndedAt: latestTurn.turnEndedAt
     });
   } catch (error) {
     console.error('Error getting latest save:', error);
@@ -525,11 +639,16 @@ app.post('/api/game-turns', validateGameTurn, async (req, res) => {
 
 app.get('/api/game-turns', async (req, res) => {
   try {
-    const { limit = 50, offset = 0, playerName } = req.query;
-    
+    const { limit = 50, offset = 0, playerName, includeInvalidated = 'true' } = req.query;
+
     const whereClause = {};
     if (playerName) {
       whereClause.playerName = playerName;
+    }
+
+    // By default, include all turns. Set includeInvalidated=false to exclude invalidated turns
+    if (includeInvalidated === 'false') {
+      whereClause.invalidatedAt = null;
     }
 
     const gameTurns = await GameTurn.findAll({
@@ -631,8 +750,7 @@ const startServer = async () => {
 
     app.listen(PORT, () => {
       console.log(`10MP Backend server running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
-      console.log(`API docs: http://localhost:${PORT}/api/game-turns`);
+      console.log(`API: http://localhost:${PORT}/api/game-turns`);
       console.log(`Admin console: http://localhost:3002 (separate application)`);
     });
   } catch (error) {

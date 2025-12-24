@@ -10,6 +10,23 @@ const api = axios.create({
   }
 });
 
+// Token management
+let adminToken = null;
+
+export const setAdminToken = (token) => {
+  adminToken = token;
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  } else {
+    delete api.defaults.headers.common['Authorization'];
+  }
+};
+
+export const clearAdminToken = () => {
+  adminToken = null;
+  delete api.defaults.headers.common['Authorization'];
+};
+
 // Add response interceptor for better error logging
 api.interceptors.response.use(
   response => response,
@@ -37,14 +54,14 @@ api.interceptors.response.use(
   }
 );
 
-// Configuration API
-export const configApi = {
-  async getConfig() {
+// Admin authentication API
+export const authApi = {
+  async login(password) {
     try {
-      const response = await api.get('/api/config');
+      const response = await api.post('/api/admin/login', { password });
       return response.data;
     } catch (error) {
-      console.error('Failed to fetch config:', error);
+      console.error('Login failed:', error);
       throw error;
     }
   }
@@ -140,6 +157,18 @@ export const kioskApi = {
       return response.data;
     } catch (error) {
       console.error('Failed to disconnect kiosk:', error);
+      throw error;
+    }
+  },
+
+  async restoreTurn(turnId) {
+    try {
+      const response = await api.post('/api/admin/restore-turn', {
+        turnId
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to restore turn:', error);
       throw error;
     }
   }

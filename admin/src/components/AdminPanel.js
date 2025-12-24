@@ -1,49 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { saveApi, gameApi, configApi, kioskApi } from '../services/adminApi';
+import { gameApi, authApi, kioskApi, setAdminToken, clearAdminToken } from '../services/adminApi';
 import './AdminPanel.css';
 
+const PAGE_SIZE = 20;
+
 const AdminPanel = () => {
-  const [config, setConfig] = useState(null);
-  const [authenticated, setAuthenticated] = useState(false);
+  const [token, setToken] = useState(null);
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  const [saves, setSaves] = useState([]);
+  const [gameTurns, setGameTurns] = useState([]);
+  const [turnsTotal, setTurnsTotal] = useState(0);
+  const [turnsHasMore, setTurnsHasMore] = useState(false);
+  const [turnsPage, setTurnsPage] = useState(0);
   const [stats, setStats] = useState(null);
   const [pendingKiosks, setPendingKiosks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Fetch config on mount
-  useEffect(() => {
-    const loadConfig = async () => {
-      try {
-        const configData = await configApi.getConfig();
-        setConfig(configData);
-      } catch (error) {
-        console.error('Failed to load config:', error);
-        setAuthError('Failed to connect to backend. Please check if the backend server is running.');
-        // Retry after 3 seconds
-        setTimeout(loadConfig, 3000);
-      }
-    };
-    loadConfig();
-  }, []);
-
-  // Fetch saves, stats, and pending kiosks
+  // Fetch stats, game turns, and pending kiosks
   const fetchData = async () => {
     try {
       setLoading(true);
+      setTurnsPage(0);
 
-      const [savesData, statsData, kiosksData] = await Promise.all([
-        saveApi.listSaves(),
+      const [statsData, kiosksData, turnsData] = await Promise.all([
         gameApi.getStats(),
-        kioskApi.getPendingKiosks('all')
+        kioskApi.getPendingKiosks('all'),
+        gameApi.getGameTurns({ limit: PAGE_SIZE, offset: 0 })
       ]);
 
-      setSaves(savesData.saves || []);
       setStats(statsData);
       setPendingKiosks(kiosksData.kiosks || []);
+      setGameTurns(turnsData.data || []);
+      setTurnsTotal(turnsData.pagination?.total || 0);
+      setTurnsHasMore(turnsData.pagination?.hasMore || false);
     } catch (error) {
       console.error('Error fetching data:', error);
       setMessage(`Error loading data: ${error.response?.data?.error || error.message}`);
@@ -52,47 +45,98 @@ const AdminPanel = () => {
     }
   };
 
-  useEffect(() => {
-    if (authenticated) {
-      fetchData();
-    }
-  }, [authenticated]);
+  // Load more turns
+  const loadMoreTurns = async () => {
+    try {
+      setLoadingMore(true);
+      const nextPage = turnsPage + 1;
+      const offset = nextPage * PAGE_SIZE;
 
-  // Handle password authentication
-  const handleLogin = (e) => {
-    e.preventDefault();
+      const turnsData = await gameApi.getGameTurns({ limit: PAGE_SIZE, offset });
 
-    // Check if config is loaded
-    if (!config) {
-      setAuthError('Loading configuration...');
-      return;
-    }
-
-    if (password === config.adminPassword) {
-      setAuthenticated(true);
-      setAuthError('');
-    } else {
-      setAuthError('Invalid password');
-      setPassword('');
+      setGameTurns(prev => [...prev, ...(turnsData.data || [])]);
+      setTurnsPage(nextPage);
+      setTurnsHasMore(turnsData.pagination?.hasMore || false);
+    } catch (error) {
+      console.error('Error loading more turns:', error);
+      setMessage(`Error loading more turns: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
-  // Restore save point (placeholder - actual restore logic would download and load the save)
-  const handleRestoreSave = async (saveUrl) => {
-    if (!window.confirm(`Restore to this save point?\n${saveUrl}\n\nThis will download the save file.`)) {
+  useEffect(() => {
+    if (token) {
+      fetchData();
+    }
+  }, [token]);
+
+  // Handle password authentication (server-side)
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoggingIn(true);
+    setAuthError('');
+
+    try {
+      const result = await authApi.login(password);
+      if (result.success && result.token) {
+        setAdminToken(result.token);
+        setToken(result.token);
+      }
+    } catch (error) {
+      if (error.response?.status === 401) {
+        setAuthError('Invalid password');
+      } else {
+        setAuthError('Failed to connect to backend. Is the server running?');
+      }
+      setPassword('');
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    clearAdminToken();
+    setToken(null);
+    setPassword('');
+  };
+
+  // Restore to a specific turn's save state
+  const handleRestoreTurn = async (turn) => {
+    if (!turn.saveStateUrl) {
+      setMessage('This turn has no save state.');
+      return;
+    }
+
+    // Count how many turns will be invalidated
+    const newerTurns = gameTurns.filter(t =>
+      new Date(t.turnEndedAt) > new Date(turn.turnEndedAt) && !t.invalidatedAt
+    );
+
+    const confirmMsg = `Restore to Turn #${turn.id}?\n\n` +
+      `Player: ${turn.playerName}\n` +
+      `Location: ${turn.location || 'Unknown'}\n` +
+      `Badges: ${turn.badgeCount || 0}\n` +
+      `Time: ${formatDate(turn.turnEndedAt)}\n\n` +
+      (newerTurns.length > 0
+        ? `WARNING: This will invalidate ${newerTurns.length} newer turn(s).\n\n`
+        : '') +
+      `The next kiosk connection will load this save state.`;
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
     try {
       setLoading(true);
-      setMessage(`Downloading save: ${saveUrl}...`);
+      setMessage('Restoring to turn...');
 
-      // Note: Actual restore logic would download the save from MinIO
-      // For now, just show a message
-      setMessage('Save download would be implemented here. Reload game with this save.');
-      await fetchData();
+      const result = await kioskApi.restoreTurn(turn.id);
+      setMessage(`Restored to Turn #${turn.id}. ${result.invalidatedCount} turn(s) invalidated.`);
+      await fetchData(); // Refresh to show invalidated turns
     } catch (error) {
-      setMessage('Error downloading save');
+      setMessage(`Error restoring turn: ${error.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
     }
@@ -147,7 +191,7 @@ const AdminPanel = () => {
   };
 
   // Login screen
-  if (!authenticated) {
+  if (!token) {
     return (
       <div className="admin-panel">
         <div className="admin-login">
@@ -160,11 +204,11 @@ const AdminPanel = () => {
               onChange={(e) => setPassword(e.target.value)}
               className="admin-password-input"
               autoFocus
-              disabled={!config}
+              disabled={loggingIn}
             />
             {authError && <div className="admin-error">{authError}</div>}
-            <button type="submit" className="admin-button" disabled={!config}>
-              {config ? 'Login' : 'Loading...'}
+            <button type="submit" className="admin-button" disabled={loggingIn}>
+              {loggingIn ? 'Logging in...' : 'Login'}
             </button>
           </form>
         </div>
@@ -177,14 +221,22 @@ const AdminPanel = () => {
     <div className="admin-panel">
       <div className="admin-header">
         <h1>10MP Admin Panel</h1>
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="admin-button"
-          style={{ marginLeft: 'auto' }}
-        >
-          {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="admin-button"
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <button
+            onClick={handleLogout}
+            className="admin-button"
+            style={{ background: '#666' }}
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
       {message && (
@@ -311,34 +363,59 @@ const AdminPanel = () => {
           )}
         </div>
 
-        {/* Save State Management */}
+        {/* Game Turns History */}
         <div className="admin-card admin-card-full">
-          <h2>Save States ({saves.length})</h2>
+          <h2>Game Turns ({turnsTotal > 0 ? `${gameTurns.length} of ${turnsTotal}` : gameTurns.length})</h2>
           <div className="saves-list">
-            {saves.length > 0 ? (
-              saves.slice(0, 20).map((save, index) => (
-                <div key={index} className="save-item">
-                  <div className="save-info">
-                    <div className="save-time">{formatDate(save.lastModified)}</div>
-                    <div className="save-details">
-                      Player: {save.playerName} |
-                      Location: {save.location} |
-                      Badges: {save.badgeCount} |
-                      Size: {(save.size / 1024).toFixed(1)}KB
-                    </div>
-                    <div className="save-key">{save.objectKey}</div>
-                  </div>
-                  <button
-                    onClick={() => handleRestoreSave(save.objectKey)}
-                    className="admin-button-small"
-                    disabled={loading}
+            {gameTurns.length > 0 ? (
+              <>
+                {gameTurns.map((turn) => (
+                  <div
+                    key={turn.id}
+                    className={`save-item ${turn.invalidatedAt ? 'save-item-invalidated' : ''}`}
                   >
-                    Restore
-                  </button>
-                </div>
-              ))
+                    <div className="save-info">
+                      <div className="save-time">
+                        #{turn.id} - {formatDate(turn.turnEndedAt)}
+                        {turn.invalidatedAt && (
+                          <span className="invalidated-badge" title={`Invalidated on ${formatDate(turn.invalidatedAt)}`}>
+                            INVALIDATED
+                          </span>
+                        )}
+                      </div>
+                      <div className="save-details">
+                        <strong>{turn.playerName}</strong> |
+                        Location: {turn.location || 'Unknown'} |
+                        Badges: {turn.badgeCount || 0} |
+                        Duration: {Math.floor((turn.turnDuration || 0) / 60)}m {(turn.turnDuration || 0) % 60}s
+                      </div>
+                    </div>
+                    {turn.saveStateUrl && !turn.invalidatedAt && (
+                      <button
+                        onClick={() => handleRestoreTurn(turn)}
+                        className="admin-button-small"
+                        disabled={loading}
+                        title="Restore game to this point"
+                      >
+                        Restore
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {turnsHasMore && (
+                  <div style={{ textAlign: 'center', marginTop: '15px' }}>
+                    <button
+                      onClick={loadMoreTurns}
+                      className="admin-button"
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? 'Loading...' : `Load More (${turnsTotal - gameTurns.length} remaining)`}
+                    </button>
+                  </div>
+                )}
+              </>
             ) : (
-              <p className="no-saves">No save states available yet</p>
+              <p className="no-saves">No game turns recorded yet</p>
             )}
           </div>
         </div>

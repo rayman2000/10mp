@@ -51,6 +51,20 @@ module.exports = (sequelize, DataTypes) => {
     allowNull: true,
     field: 'save_state_url',
     comment: 'MinIO object key/URL for save state file'
+  },
+  invalidatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null,
+    field: 'invalidated_at',
+    comment: 'Timestamp when this turn was invalidated by a restore to an earlier turn'
+  },
+  invalidatedByRestoreToTurnId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    defaultValue: null,
+    field: 'invalidated_by_restore_to_turn_id',
+    comment: 'The turn ID that was restored to, invalidating this turn'
   }
 }, {
   tableName: 'game_turns',

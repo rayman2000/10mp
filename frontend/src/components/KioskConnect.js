@@ -29,8 +29,14 @@ const KioskConnect = ({ onConnect }) => {
   const [status, setStatus] = useState('generating'); // 'generating', 'registering', 'waiting', 'activated', 'error'
   const [error, setError] = useState('');
   const pollIntervalRef = useRef(null);
+  const onConnectRef = useRef(onConnect);
 
-  // Generate token and register on mount
+  // Keep ref updated
+  useEffect(() => {
+    onConnectRef.current = onConnect;
+  }, [onConnect]);
+
+  // Generate token and register on mount (runs only once)
   useEffect(() => {
     const initKiosk = async () => {
       try {
@@ -71,8 +77,8 @@ const KioskConnect = ({ onConnect }) => {
         if (data.status === 'active') {
           // Already activated (shouldn't happen on first registration)
           setStatus('activated');
-          if (onConnect) {
-            onConnect();
+          if (onConnectRef.current) {
+            onConnectRef.current();
           }
         } else {
           // Start polling for activation
@@ -94,7 +100,7 @@ const KioskConnect = ({ onConnect }) => {
         clearInterval(pollIntervalRef.current);
       }
     };
-  }, [onConnect]);
+  }, []); // Empty deps - only run once on mount
 
   // Poll backend for activation status
   const startPolling = (tokenToCheck) => {
@@ -124,8 +130,8 @@ const KioskConnect = ({ onConnect }) => {
           clearInterval(pollIntervalRef.current);
 
           // Notify parent component
-          if (onConnect) {
-            onConnect();
+          if (onConnectRef.current) {
+            onConnectRef.current();
           }
         }
       } catch (err) {

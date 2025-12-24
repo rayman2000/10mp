@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import './App.css';
 import GameScreen from './components/GameScreen';
 import PlayerEntry from './components/PlayerEntry';
@@ -6,97 +6,38 @@ import MessageInput from './components/MessageInput';
 import ErrorBoundary from './components/ErrorBoundary';
 import KioskConnect from './components/KioskConnect';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-
 function App() {
   const [currentScreen, setCurrentScreen] = useState('connect'); // 'connect', 'entry', 'game', 'message'
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [previousMessage, setPreviousMessage] = useState('Welcome to 10 Minute Pokemon! Make some progress and have fun!');
-  const [backendOnline, setBackendOnline] = useState(true);
   const [kioskApproved, setKioskApproved] = useState(false); // Track if kiosk has been approved
   const [config, setConfig] = useState({
-    turnDurationMinutes: 10,
-    autoSaveIntervalMinutes: 1,
-    adminPassword: 'change-me-in-production'
+    turnDurationMinutes: 3,
+    autoSaveIntervalMinutes: 1
   });
 
   // Handler for successful kiosk activation
-  const handleKioskActivated = () => {
+  const handleKioskActivated = useCallback(() => {
     console.log('Kiosk activated');
     setKioskApproved(true); // Mark kiosk as approved
     // Move to player entry screen
     setCurrentScreen('entry');
-  };
-
-  // Fetch config on mount
-  useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/config`);
-        if (response.ok) {
-          const configData = await response.json();
-          setConfig(configData);
-          console.log('Configuration loaded:', configData);
-        }
-      } catch (error) {
-        console.error('Failed to fetch config, using defaults:', error);
-      }
-    };
-
-    fetchConfig();
   }, []);
 
-  // Health check polling
-  useEffect(() => {
-    const checkBackendHealth = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/health`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        setBackendOnline(response.ok);
-      } catch (error) {
-        console.error('Backend health check failed:', error);
-        setBackendOnline(false);
-      }
-    };
-
-    // Check immediately on mount
-    checkBackendHealth();
-
-    // Then check every 30 seconds
-    const intervalId = setInterval(checkBackendHealth, 30000);
-
-    return () => clearInterval(intervalId);
+  // Handler for game end - memoized to prevent timer resets
+  const handleGameEnd = useCallback(() => {
+    setCurrentScreen('message');
   }, []);
 
   return (
     <div className="App">
-      {/* Backend connectivity warning */}
-      {!backendOnline && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: '#ff4444',
-          color: 'white',
-          padding: '10px',
-          textAlign: 'center',
-          zIndex: 10000,
-          fontWeight: 'bold'
-        }}>
-          ⚠️ Backend server is offline. Game progress will not be saved.
-        </div>
-      )}
-
       {/* Always render GameScreen but make it interactive only when current screen is 'game' */}
       <ErrorBoundary onReset={() => setCurrentScreen('entry')}>
         <GameScreen
           player={currentPlayer}
           isActive={currentScreen === 'game'}
           approved={kioskApproved}
-          onGameEnd={() => setCurrentScreen('message')}
+          onGameEnd={handleGameEnd}
           config={config}
         />
       </ErrorBoundary>

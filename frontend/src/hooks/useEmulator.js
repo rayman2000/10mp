@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import EmulatorManager from '../utils/emulator';
 
 export const useEmulator = (config = {}, approved = false) => {
@@ -60,48 +60,74 @@ export const useEmulator = (config = {}, approved = false) => {
     };
   }, [approved]);
 
-  const startGame = () => {
-    if (emulatorRef.current && isLoaded) {
+  const startGame = useCallback(() => {
+    if (emulatorRef.current) {
       emulatorRef.current.startGame();
       setIsRunning(true);
     }
-  };
+  }, []);
 
-  const pauseGame = () => {
+  const pauseGame = useCallback(() => {
     if (emulatorRef.current) {
       emulatorRef.current.pauseGame();
       setIsRunning(false);
     }
-  };
+  }, []);
 
-  const saveGame = () => {
+  const saveGame = useCallback(() => {
     if (emulatorRef.current) {
       return emulatorRef.current.saveState();
     }
     return null;
-  };
+  }, []);
 
-  const loadGame = (saveData) => {
+  const loadGame = useCallback((saveData) => {
     if (emulatorRef.current) {
       return emulatorRef.current.loadState(saveData);
     }
     return false;
-  };
+  }, []);
 
-  const scrapeData = async () => {
+  const scrapeData = useCallback(async () => {
     if (emulatorRef.current) {
       const data = await emulatorRef.current.scrapeGameData();
       setGameData(data);
       return data;
     }
     return null;
-  };
+  }, []);
 
-  const setAutoSaveCallback = (callback) => {
+  const setAutoSaveCallback = useCallback((callback) => {
     if (emulatorRef.current) {
       emulatorRef.current.setAutoSaveCallback(callback);
     }
-  };
+  }, []);
+
+  // Debug function to test memory access - call from browser console
+  const debugMemory = useCallback(() => {
+    if (emulatorRef.current) {
+      return emulatorRef.current.debugMemoryAccess();
+    }
+    console.log('Emulator not initialized');
+    return null;
+  }, []);
+
+  // Expose debug function globally for easy console access
+  useEffect(() => {
+    if (emulatorRef.current) {
+      window.debugEmulatorMemory = () => {
+        if (emulatorRef.current) {
+          return emulatorRef.current.debugMemoryAccess();
+        }
+        return 'Emulator not available';
+      };
+      window.emulatorInstance = emulatorRef.current;
+    }
+    return () => {
+      delete window.debugEmulatorMemory;
+      delete window.emulatorInstance;
+    };
+  }, [isLoaded]);
 
   return {
     isLoaded,
@@ -113,6 +139,7 @@ export const useEmulator = (config = {}, approved = false) => {
     saveGame,
     loadGame,
     scrapeData,
-    setAutoSaveCallback
+    setAutoSaveCallback,
+    debugMemory
   };
 };

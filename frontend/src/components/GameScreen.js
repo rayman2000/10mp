@@ -5,41 +5,55 @@ import './GameScreen.css';
 
 const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, config }) => {
   const containerRef = useRef(null);
-  const [latestGameData, setLatestGameData] = useState(null);
-  const latestGameDataRef = useRef(null); // Use ref to avoid re-creating callbacks
   const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false); // Ref to avoid recreating saveTurnData callback
   const [turnStartTime] = useState(() => new Date());
   const {
     isLoaded,
     isRunning,
     error,
     startGame,
-    scrapeData,
     saveGame,
-    setAutoSaveCallback
+    loadGame,
+    scrapeData
   } = useEmulator(config, approved);
 
   console.log('GameScreen render:', { isLoaded, isRunning, error });
 
   // Function to save turn data to backend
   const saveTurnData = useCallback(async () => {
-    if (!player || !latestGameDataRef.current || isSaving) return;
+    if (!player || isSavingRef.current) return;
 
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
+      // Scrape game data at turn end
+      console.log('Scraping game data for turn end...');
+      const gameData = await scrapeData();
+      console.log('Scraped game data:', gameData);
+
       const turnEndTime = new Date();
       const turnDuration = Math.floor((turnEndTime - turnStartTime) / 1000); // Duration in seconds
       const saveState = saveGame(); // Get current save state from emulator
 
+      // Convert playtime object to total seconds (0 if not available)
+      const playtimeObj = gameData?.playtime;
+      let playtimeSeconds = 0;
+      if (playtimeObj && typeof playtimeObj === 'object') {
+        playtimeSeconds = (playtimeObj.hours || 0) * 3600 + (playtimeObj.minutes || 0) * 60 + (playtimeObj.seconds || 0);
+      } else if (typeof playtimeObj === 'number') {
+        playtimeSeconds = playtimeObj;
+      }
+
       const turnData = {
         playerName: player,
-        location: latestGameDataRef.current.location || 'Unknown',
-        badgeCount: latestGameDataRef.current.badgeCount || 0,
-        playtime: latestGameDataRef.current.playtime || 0,
-        money: latestGameDataRef.current.money || 0,
-        partyData: latestGameDataRef.current.partyData || [],
+        location: gameData?.location || 'Unknown',
+        badgeCount: gameData?.badges || 0,
+        playtime: playtimeSeconds,
+        money: gameData?.money || 0,
+        partyData: gameData?.party || [],
         turnDuration,
-        saveState: saveState ? JSON.stringify(saveState) : null
+        saveState: saveState || null
       };
 
       console.log('Saving turn data:', turnData);
@@ -48,147 +62,159 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
     } catch (error) {
       console.error('Failed to save turn data:', error);
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
-  }, [player, isSaving, turnStartTime, saveGame]);
+  }, [player, turnStartTime, saveGame, scrapeData]);
+
+  // Track if we've already loaded the last save to prevent re-loading
+  const lastSaveLoadedRef = useRef(false);
+
+  // Function to fetch and load the last save state from the backend
+  const loadLastSaveState = useCallback(async () => {
+    try {
+      console.log('Fetching last save state...');
+
+      // Get the latest valid save from backend
+      const latestSave = await saveApi.getLatestSave();
+
+      if (latestSave && latestSave.saveStateUrl) {
+        console.log(`Found save from turn ${latestSave.turnId}: ${latestSave.saveStateUrl}`);
+
+        // Download the save data
+        const saveData = await saveApi.downloadSave(latestSave.saveStateUrl);
+
+        if (saveData) {
+          console.log(`Downloaded save data: ${saveData.byteLength} bytes`);
+
+          // Convert ArrayBuffer to Base64 for loadGame
+          const base64 = btoa(
+            new Uint8Array(saveData).reduce((data, byte) => data + String.fromCharCode(byte), '')
+          );
+
+          const loaded = loadGame(base64);
+          if (loaded) {
+            console.log('✅ Last save state loaded successfully!');
+          } else {
+            console.warn('Failed to load save state into emulator');
+          }
+        }
+      } else {
+        console.log('No previous save state found - starting fresh game');
+      }
+    } catch (error) {
+      // 404 means no saves exist yet - that's fine, start fresh
+      if (error.response?.status === 404) {
+        console.log('No previous save state found - starting fresh game');
+      } else {
+        console.error('Error loading last save state:', error);
+      }
+      // Don't fail the game start if save loading fails
+    }
+  }, [loadGame]);
 
   useEffect(() => {
     if (isLoaded) {
+      // Start the game
       startGame();
 
-      // Set up auto-save callback to upload to backend
-      const handleAutoSave = async (saveData) => {
-        try {
-          console.log('Auto-save triggered, uploading to backend...');
-
-          await saveApi.uploadSave(saveData, latestGameDataRef.current || {});
-          console.log('Auto-save uploaded successfully');
-        } catch (error) {
-          console.error('Failed to upload auto-save:', error);
-        }
-      };
-
-      setAutoSaveCallback(handleAutoSave);
+      // Load the last save state after a short delay to let the emulator fully start
+      if (!lastSaveLoadedRef.current) {
+        lastSaveLoadedRef.current = true;
+        setTimeout(async () => {
+          await loadLastSaveState();
+        }, 2000); // Wait 2 seconds for emulator to be ready
+      }
     }
-  }, [isLoaded, setAutoSaveCallback, config]);
+  }, [isLoaded, startGame, loadLastSaveState]);
 
   // Focus emulator when becoming active to ensure immediate input
   useEffect(() => {
-    if (isActive && containerRef.current) {
-      const emulatorCanvas = containerRef.current.querySelector('canvas');
-      if (emulatorCanvas) {
-        // Small delay to ensure DOM is ready
-        setTimeout(() => {
-          emulatorCanvas.focus();
-          emulatorCanvas.click();
-        }, 50);
-      }
+    if (!isActive || !containerRef.current) return;
+
+    const emulatorCanvas = containerRef.current.querySelector('canvas');
+    if (emulatorCanvas) {
+      // Small delay to ensure DOM is ready
+      const focusTimeout = setTimeout(() => {
+        emulatorCanvas.focus();
+        emulatorCanvas.click();
+      }, 50);
+      return () => clearTimeout(focusTimeout);
     }
   }, [isActive]);
 
-  // Auto-end game after configured duration - only when active
+  // Use refs to store callbacks and config so timer is independent of renders
+  const saveTurnDataRef = useRef(saveTurnData);
+  const onGameEndRef = useRef(onGameEnd);
+  const configRef = useRef(config);
+  const timerRef = useRef(null);
+  const timerStartedRef = useRef(false);
+
+  // Keep refs updated with latest values
   useEffect(() => {
-    if (!isActive || !config) return;
+    saveTurnDataRef.current = saveTurnData;
+  }, [saveTurnData]);
 
-    const turnDurationMs = (config.turnDurationMinutes || 10) * 60000;
-    console.log(`Turn will end in ${config.turnDurationMinutes} minutes (${turnDurationMs}ms)`);
-
-    const timer = setTimeout(async () => {
-      await saveTurnData();
-      onGameEnd();
-    }, turnDurationMs);
-
-    return () => clearTimeout(timer);
-  }, [onGameEnd, isActive, saveTurnData, config]);
-
-  // Manual game end with escape key - only when active
   useEffect(() => {
-    if (!isActive) return;
-    
-    const handleKeyPress = async (e) => {
-      if (e.key === 'Escape') {
-        await saveTurnData();
-        onGameEnd();
+    onGameEndRef.current = onGameEnd;
+  }, [onGameEnd]);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  // Auto-end game after configured duration - ONLY depends on isActive
+  useEffect(() => {
+    console.log('Timer effect running:', { isActive, timerStarted: timerStartedRef.current });
+
+    if (!isActive) {
+      // When becoming inactive, clear timer and reset
+      if (timerRef.current) {
+        console.log('Clearing timer - no longer active');
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
       }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [onGameEnd, isActive, saveTurnData]);
-
-  // Scrape game data every minute when active and save to file
-  useEffect(() => {
-    console.log('Scraping effect triggered:', { isActive, isLoaded, player });
-    
-    if (!isActive || !isLoaded) {
-      console.log('Skipping scraping setup - not active or not loaded');
+      timerStartedRef.current = false;
       return;
     }
-    
-    console.log('Setting up data scraping interval...');
-    
-    const scrapeInterval = setInterval(async () => {
-      console.log('Running periodic scrape...');
-      try {
-        const gameData = await scrapeData();
-        console.log('Scraped data result:', gameData);
-        if (gameData) {
-          setLatestGameData(gameData);
-          latestGameDataRef.current = gameData; // Update ref for callbacks
-          await saveGameDataToFile(gameData, player);
-        }
-      } catch (error) {
-        console.error('Error during data scraping:', error);
-      }
-    }, 60000); // Every minute
 
-    // Also scrape immediately when becoming active
-    const initialScrape = async () => {
-      console.log('Running initial scrape...');
+    // Only start timer once per active session
+    if (timerStartedRef.current) {
+      console.log('Timer already started for this session, skipping');
+      return;
+    }
+
+    const currentConfig = configRef.current;
+    if (!currentConfig) {
+      console.log('Timer not started: config not yet available');
+      return;
+    }
+
+    timerStartedRef.current = true;
+    const turnDurationMs = (currentConfig.turnDurationMinutes || 3) * 60000;
+    const endTime = new Date(Date.now() + turnDurationMs);
+    console.log(`✅ Timer STARTED: Turn will end in ${currentConfig.turnDurationMinutes || 3} minutes at ${endTime.toLocaleTimeString()}`);
+
+    timerRef.current = setTimeout(async () => {
+      console.log('⏰ Timer FIRED! Ending turn...');
       try {
-        const gameData = await scrapeData();
-        console.log('Initial scrape result:', gameData);
-        if (gameData) {
-          setLatestGameData(gameData);
-          latestGameDataRef.current = gameData; // Update ref for callbacks
-          await saveGameDataToFile(gameData, player);
-        }
+        await saveTurnDataRef.current();
+        console.log('Save completed, calling onGameEnd...');
       } catch (error) {
-        console.error('Error during initial scraping:', error);
+        console.error('Error during save on timer end:', error);
       }
-    };
-    
-    // Delay initial scrape to let emulator fully load
-    console.log('Setting up initial scrape in 5 seconds...');
-    setTimeout(initialScrape, 5000);
+      // Always call onGameEnd using ref for latest value
+      onGameEndRef.current();
+    }, turnDurationMs);
 
     return () => {
-      console.log('Cleaning up scraping interval');
-      clearInterval(scrapeInterval);
+      if (timerRef.current) {
+        console.log('Timer cleanup on unmount');
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
     };
-  }, [isActive, isLoaded, scrapeData, player]);
-
-  // Function to log game data to console
-  const saveGameDataToFile = async (gameData, playerName) => {
-    try {
-      const timestamp = new Date().toISOString();
-      
-      const dataWithPlayer = {
-        ...gameData,
-        currentPlayer: playerName,
-        scrapeTime: timestamp
-      };
-      
-      console.log('=== POKEMON GAME DATA ===');
-      console.log(`Player: ${playerName}`);
-      console.log(`Time: ${timestamp}`);
-      console.log('Data:', JSON.stringify(dataWithPlayer, null, 2));
-      console.log('========================');
-      
-    } catch (error) {
-      console.error('Error logging game data:', error);
-    }
-  };
+  }, [isActive]); // Only depends on isActive!
 
   if (error) {
     return (

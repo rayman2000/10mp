@@ -61,10 +61,21 @@ class SaveStateStorage {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const objectName = `autosave-${timestamp}.sav`;
 
-      // Convert data to Buffer if it's a string
-      const buffer = Buffer.isBuffer(saveData)
-        ? saveData
-        : Buffer.from(JSON.stringify(saveData));
+      // Handle different input types:
+      // - Buffer: use directly
+      // - Base64 string: decode to Buffer
+      // - Other: try to convert
+      let buffer;
+      if (Buffer.isBuffer(saveData)) {
+        buffer = saveData;
+      } else if (typeof saveData === 'string') {
+        // Assume base64 encoded string from frontend
+        buffer = Buffer.from(saveData, 'base64');
+        console.log(`Decoded base64 auto-save data: ${buffer.length} bytes`);
+      } else {
+        // Fallback for other types
+        buffer = Buffer.from(JSON.stringify(saveData));
+      }
 
       // Prepare metadata
       const minioMetadata = {
@@ -96,7 +107,7 @@ class SaveStateStorage {
    * @param {Buffer|string} saveData - Save state data
    * @param {object} metadata - Game metadata
    */
-  async saveTurnSave(turnId, saveData, metadata = {}) {
+  async saveTurnSave(sessionId, turnId, saveData, metadata = {}) {
     if (!this.initialized) {
       throw new Error('MinIO storage not initialized');
     }
@@ -104,9 +115,21 @@ class SaveStateStorage {
     try {
       const objectName = `turn-${turnId}.sav`;
 
-      const buffer = Buffer.isBuffer(saveData)
-        ? saveData
-        : Buffer.from(JSON.stringify(saveData));
+      // Handle different input types:
+      // - Buffer: use directly
+      // - Base64 string: decode to Buffer
+      // - Other: try to convert
+      let buffer;
+      if (Buffer.isBuffer(saveData)) {
+        buffer = saveData;
+      } else if (typeof saveData === 'string') {
+        // Assume base64 encoded string from frontend
+        buffer = Buffer.from(saveData, 'base64');
+        console.log(`Decoded base64 save data: ${buffer.length} bytes`);
+      } else {
+        // Fallback for other types
+        buffer = Buffer.from(JSON.stringify(saveData));
+      }
 
       const minioMetadata = {
         'x-amz-meta-player-name': metadata.playerName || 'unknown',
