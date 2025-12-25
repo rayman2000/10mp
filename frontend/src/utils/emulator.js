@@ -436,7 +436,7 @@ class EmulatorManager {
   // ROM scraping methods for Pokemon Fire Red data
   async scrapeGameData() {
     console.log('scrapeGameData called, isRunning:', this.isRunning);
-    
+
     if (!this.isRunning) {
       console.log('Emulator not running, returning null');
       return null;
@@ -444,7 +444,7 @@ class EmulatorManager {
 
     try {
       console.log('Attempting to scrape game data...');
-      
+
       // Access EmulatorJS memory through Module interface
       const gameData = {
         timestamp: new Date().toISOString(),
@@ -452,12 +452,11 @@ class EmulatorManager {
         location: this.readCurrentLocation(),
         badges: this.readBadgeCount(),
         playtime: this.readPlaytime(),
-        party: this.readPartyData(),
-        money: this.readMoney()
+        party: this.readPartyData()
       };
 
       console.log('Raw scraped game data:', gameData);
-      
+
       return gameData;
     } catch (error) {
       console.error('Failed to scrape game data:', error);
@@ -617,16 +616,40 @@ class EmulatorManager {
       // Check for functions that might give us memory access
       if (typeof gameManager.getState === 'function') {
         console.log('getState available');
+
+        // Get save state and analyze it
+        const stateData = gameManager.getState();
+        if (stateData) {
+          const state = new Uint8Array(stateData);
+          console.log('\n--- Save State Analysis ---');
+          console.log('Size:', state.length, 'bytes (', (state.length / 1024).toFixed(1), 'KB)');
+
+          // Show header
+          console.log('Header (first 64 bytes):');
+          this.hexDump(state, 0, 64);
+
+          // Show chunks at various offsets to understand structure
+          console.log('\nSampling at key offsets:');
+          const offsets = [0x100, 0x1000, 0x10000, 0x19000, 0x20000, 0x21000, 0x30000, 0x40000];
+          for (const off of offsets) {
+            if (off + 16 < state.length) {
+              console.log(`  Offset 0x${off.toString(16)}:`);
+              this.hexDump(state, off, 16);
+            }
+          }
+        }
       }
     }
 
     // Try save state parsing method
     console.log('\n--- Save State Memory Access ---');
+    // Clear cache to force fresh parse
+    this._cachedSaveStateMemory = null;
     const memInfo = this.getMemoryFromSaveState();
     if (memInfo) {
       console.log('Successfully parsed save state memory!');
-      console.log('EWRAM base in state:', memInfo.ewramBase);
-      console.log('IWRAM base in state:', memInfo.iwramBase);
+      console.log('EWRAM base in state:', '0x' + memInfo.ewramBase.toString(16));
+      console.log('IWRAM base in state:', '0x' + memInfo.iwramBase.toString(16));
       this.testMemoryReads();
     } else {
       console.log('Save state parsing failed, trying RetroArch API...');
@@ -637,10 +660,72 @@ class EmulatorManager {
         this.testMemoryReads();
       } else {
         console.log('No memory access method available');
+        console.log('\nTo debug further, try: window.emulatorInstance.analyzeSaveState()');
       }
     }
 
     return 'Debug complete - check console for results';
+  }
+
+  // Hex dump utility for debugging
+  hexDump(arr, offset, length) {
+    const bytes = Array.from(arr.slice(offset, offset + length));
+    const hex = bytes.map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const ascii = bytes.map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+    console.log(`    ${hex}  |${ascii}|`);
+  }
+
+  // Deep analysis of save state format
+  analyzeSaveState() {
+    console.log('=== Deep Save State Analysis ===');
+
+    const gameManager = window.EJS_emulator?.gameManager;
+    if (!gameManager?.getState) {
+      console.log('getState not available');
+      return;
+    }
+
+    const stateData = gameManager.getState();
+    if (!stateData) {
+      console.log('No save state data');
+      return;
+    }
+
+    const state = new Uint8Array(stateData);
+    console.log('Total size:', state.length, 'bytes');
+
+    // Find all occurrences of EWRAM-like pointers
+    console.log('\nSearching for EWRAM pointer patterns (0x02xxxxxx):');
+    let foundPairs = 0;
+
+    for (let i = 0; i < state.length - 8 && foundPairs < 20; i += 4) {
+      const val1 = this.readU32FromArray(state, i);
+      const val2 = this.readU32FromArray(state, i + 4);
+
+      const isEWRAM = (p) => (p >>> 0) >= 0x02000000 && (p >>> 0) <= 0x0203FFFF;
+
+      if (isEWRAM(val1) && isEWRAM(val2)) {
+        const diff = Math.abs((val1 >>> 0) - (val2 >>> 0));
+        if (diff > 0x100 && diff < 0x10000) {
+          console.log(`  Offset 0x${i.toString(16)}: 0x${val1.toString(16)} 0x${val2.toString(16)} (diff: 0x${diff.toString(16)})`);
+          foundPairs++;
+        }
+      }
+    }
+
+    // Look for "mGBA" signature or other format markers
+    console.log('\nSearching for format signatures:');
+    const signatures = ['mGBA', 'GBAS', 'SAVE', 'VBA-', 'STAT'];
+    for (const sig of signatures) {
+      for (let i = 0; i < Math.min(state.length - 4, 0x1000); i++) {
+        const found = sig.split('').every((ch, j) => state[i + j] === ch.charCodeAt(0));
+        if (found) {
+          console.log(`  Found "${sig}" at offset 0x${i.toString(16)}`);
+        }
+      }
+    }
+
+    return 'Analysis complete - check console';
   }
 
   // Extract memory from save state instead of heap scanning
@@ -669,134 +754,37 @@ class EmulatorManager {
         return null;
       }
 
-      // mGBA save state format contains memory regions
-      // We need to find EWRAM (256KB) and IWRAM (32KB) within the state
-      // The state format varies, but memory is usually at predictable offsets
-
-      // Try to locate memory by searching for patterns
       const state = new Uint8Array(stateData);
-
-      // Log state info for debugging
       console.log('Save state size:', state.length, 'bytes');
 
-      // Debug: Show first bytes of save state to understand format
-      const header = Array.from(state.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      console.log('Save state header:', header);
-
-      // Check if it's a known format (mGBA uses "mGBA" magic, etc.)
+      // Check for known save state formats
       const magic = String.fromCharCode(state[0], state[1], state[2], state[3]);
-      console.log('Magic bytes:', magic);
+      console.log('Magic bytes:', magic, '(hex:', Array.from(state.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' '), ')');
 
-      // Strategy: Search for EWRAM/IWRAM patterns
-      // Look for any 4-byte value that looks like a valid EWRAM pointer (0x0202XXXX)
       let ewramBase = -1;
       let iwramBase = -1;
 
-      // First, find all potential EWRAM pointers in the state
-      const potentialPointers = [];
-      for (let i = 0; i < state.length - 4; i += 4) {
-        const val = state[i] | (state[i+1] << 8) | (state[i+2] << 16) | (state[i+3] << 24);
-        // Look for EWRAM pointers (0x0202XXXX is common for saveblocks)
-        if ((val >>> 0) >= 0x02020000 && (val >>> 0) <= 0x0203FFFF) {
-          potentialPointers.push({ offset: i, value: val >>> 0 });
-        }
-      }
+      // Method 1: Scan for saveblock pointer pattern
+      // Pokemon Fire Red has two consecutive pointers in IWRAM:
+      // 0x03005008: SaveBlock1 pointer (0x02xxxxxx)
+      // 0x0300500C: SaveBlock2 pointer (0x02xxxxxx)
+      // We search for this pattern in the save state
 
-      console.log(`Found ${potentialPointers.length} potential EWRAM pointers`);
-      if (potentialPointers.length > 0 && potentialPointers.length < 50) {
-        console.log('First few pointers:', potentialPointers.slice(0, 10).map(p =>
-          `0x${p.offset.toString(16)}: 0x${p.value.toString(16)}`
-        ));
-      }
+      console.log('Scanning save state for saveblock pointer pattern...');
+      const found = this.scanForSaveblockPointers(state);
 
-      // Try to find IWRAM by looking for consecutive saveblock pointers
-      // They should be at offsets 0x5008 and 0x500C from IWRAM base
-      for (const p of potentialPointers) {
-        // If this pointer is at offset 0x5008 within a 32KB region, check for another at 0x500C
-        const possibleIWRAMBase = p.offset - 0x5008;
-        if (possibleIWRAMBase >= 0 && possibleIWRAMBase + 0x8000 <= state.length) {
-          const ptr2Offset = possibleIWRAMBase + 0x500C;
-          if (ptr2Offset + 4 <= state.length) {
-            const ptr2 = state[ptr2Offset] | (state[ptr2Offset+1] << 8) |
-                        (state[ptr2Offset+2] << 16) | (state[ptr2Offset+3] << 24);
-            if ((ptr2 >>> 0) >= 0x02020000 && (ptr2 >>> 0) <= 0x0203FFFF) {
-              console.log(`Found IWRAM candidate at 0x${possibleIWRAMBase.toString(16)}`);
-              console.log(`  SB1 (0x5008) = 0x${p.value.toString(16)}`);
-              console.log(`  SB2 (0x500C) = 0x${(ptr2 >>> 0).toString(16)}`);
-              iwramBase = possibleIWRAMBase;
-              break;
-            }
-          }
-        }
-      }
-
-      // If still not found, try a different approach: look for 256KB aligned regions
-      if (iwramBase === -1) {
-        console.log('Trying aligned region search...');
-        // EWRAM is 256KB, IWRAM is 32KB
-        // In the save state, they might be at specific offsets
-        // Common mGBA layout: header + EWRAM (256KB) + IWRAM (32KB) + other
-
-        // Try common offsets where EWRAM might start
-        const tryOffsets = [0x40, 0x100, 0x200, 0x1000];
-        for (const offset of tryOffsets) {
-          if (offset + 0x40000 + 0x8000 <= state.length) {
-            // Check if offset + 0x40000 looks like IWRAM start
-            const testIWRAM = offset + 0x40000;
-            const ptr1 = state[testIWRAM + 0x5008] | (state[testIWRAM + 0x5008 + 1] << 8) |
-                        (state[testIWRAM + 0x5008 + 2] << 16) | (state[testIWRAM + 0x5008 + 3] << 24);
-            const ptr2 = state[testIWRAM + 0x500C] | (state[testIWRAM + 0x500C + 1] << 8) |
-                        (state[testIWRAM + 0x500C + 2] << 16) | (state[testIWRAM + 0x500C + 3] << 24);
-
-            console.log(`Offset 0x${offset.toString(16)}: EWRAM, testing IWRAM at 0x${testIWRAM.toString(16)}`);
-            console.log(`  ptr1=0x${(ptr1>>>0).toString(16)}, ptr2=0x${(ptr2>>>0).toString(16)}`);
-
-            if ((ptr1 >>> 0) >= 0x02000000 && (ptr1 >>> 0) <= 0x0203FFFF &&
-                (ptr2 >>> 0) >= 0x02000000 && (ptr2 >>> 0) <= 0x0203FFFF) {
-              ewramBase = offset;
-              iwramBase = testIWRAM;
-              console.log(`Found memory layout! EWRAM at 0x${ewramBase.toString(16)}, IWRAM at 0x${iwramBase.toString(16)}`);
-              break;
-            }
-          }
-        }
+      if (found) {
+        iwramBase = found.iwramBase;
+        ewramBase = found.ewramBase;
+        console.log(`Found memory layout via pattern scan:`);
+        console.log(`  IWRAM base in state: 0x${iwramBase.toString(16)}`);
+        console.log(`  EWRAM base in state: 0x${ewramBase.toString(16)}`);
+        console.log(`  Header offset: 0x${found.headerOffset.toString(16)}`);
       }
 
       if (iwramBase === -1) {
-        console.log('Could not find IWRAM in save state');
+        console.log('Could not find GBA memory in save state');
         return null;
-      }
-
-      // EWRAM is usually before or after IWRAM in the state
-      // In mGBA, it's typically at a fixed offset from IWRAM
-      // Try common layouts:
-      // 1. EWRAM immediately before IWRAM
-      // 2. EWRAM at a fixed offset
-
-      // Most likely: EWRAM is 256KB, so check if iwramBase - 0x40000 is valid
-      if (iwramBase >= 0x40000) {
-        ewramBase = iwramBase - 0x40000;
-        console.log(`Assuming EWRAM at state offset 0x${ewramBase.toString(16)} (before IWRAM)`);
-      } else {
-        // Try after IWRAM
-        ewramBase = iwramBase + 0x8000; // After 32KB IWRAM
-        console.log(`Assuming EWRAM at state offset 0x${ewramBase.toString(16)} (after IWRAM)`);
-      }
-
-      // Verify by checking if the saveblock pointer points to valid data
-      const sb1Ptr = state[iwramBase + 0x5008] |
-                     (state[iwramBase + 0x5008 + 1] << 8) |
-                     (state[iwramBase + 0x5008 + 2] << 16) |
-                     (state[iwramBase + 0x5008 + 3] << 24);
-
-      const sb1Offset = sb1Ptr - 0x02000000; // Offset within EWRAM
-      const flagsOffset = sb1Offset + 0x0580 + 0x104; // Badge flags location
-
-      console.log(`SB1 points to EWRAM offset 0x${sb1Offset.toString(16)}, flags at 0x${flagsOffset.toString(16)}`);
-
-      if (ewramBase + flagsOffset < state.length) {
-        const badgeFlags = state[ewramBase + flagsOffset];
-        console.log(`Badge flags from state: 0x${badgeFlags.toString(16)}`);
       }
 
       this._cachedSaveStateMemory = {
@@ -813,6 +801,207 @@ class EmulatorManager {
     }
   }
 
+  // Scan save state for the saveblock pointer pattern
+  // Returns { iwramBase, ewramBase, headerOffset } or null
+  scanForSaveblockPointers(state) {
+    // Pokemon Fire Red saveblock pointers at IWRAM offsets 0x5008 and 0x500C
+    // They should be valid EWRAM pointers (0x02000000-0x0203FFFF)
+
+    // mGBA save state layout (from serialize.h):
+    // - Version magic at offset 0x00000: 0x01000007
+    // - IWRAM at offset 0x19000 (32KB)
+    // - EWRAM at offset 0x21000 (256KB)
+    // - Total: 0x61000 (397,312 bytes)
+    const MGBA_VERSION_MAGIC = 0x01000007;
+    const MGBA_IWRAM_OFFSET = 0x19000;
+    const MGBA_EWRAM_OFFSET = 0x21000;
+    const SB_PTR_OFFSET_IN_IWRAM = 0x5008;
+
+    // First, try to find the mGBA state by looking for the version magic
+    console.log('Searching for mGBA version magic (0x01000007)...');
+    for (let i = 0; i < state.length - 0x61000; i += 4) {
+      const magic = this.readU32FromArray(state, i);
+      if (magic === MGBA_VERSION_MAGIC) {
+        console.log(`Found mGBA magic at offset 0x${i.toString(16)}`);
+
+        // Verify by checking the saveblock pointers
+        const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
+        const testEWRAMBase = i + MGBA_EWRAM_OFFSET;
+
+        if (testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 8 < state.length) {
+          const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM);
+          const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 4);
+
+          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+
+          if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
+            console.log(`  Valid saveblock pointers found!`);
+            return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
+          } else {
+            console.log(`  Saveblock pointers not valid, continuing search...`);
+          }
+        }
+      }
+    }
+
+    // Try known header offsets (libretro wrappers often add fixed-size headers)
+    console.log('Magic search failed, trying known header offsets...');
+    const knownOffsets = [0, 0x38, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000, 0x4000, 0x8000, 0x10000, 0x20000];
+
+    for (const headerOffset of knownOffsets) {
+      const testIWRAMBase = headerOffset + MGBA_IWRAM_OFFSET;
+      const testEWRAMBase = headerOffset + MGBA_EWRAM_OFFSET;
+
+      if (testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 8 >= state.length) continue;
+
+      const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM);
+      const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 4);
+
+      if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
+        console.log(`Found at known offset 0x${headerOffset.toString(16)}:`);
+        console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+        return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset };
+      }
+    }
+
+    // If known offsets fail, scan the entire state for the pointer pattern
+    console.log('Known offsets failed, scanning entire state for pointer pattern...');
+
+    for (let i = 0; i < state.length - 0x48000; i += 4) {
+      const val1 = this.readU32FromArray(state, i);
+      const val2 = this.readU32FromArray(state, i + 4);
+
+      if (this.isValidSaveblockPair(val1, val2)) {
+        // Found candidate pointers - calculate where IWRAM/EWRAM would be
+        // These pointers are at IWRAM + 0x5008, so IWRAM starts 0x5008 bytes before
+        const iwramBase = i - SB_PTR_OFFSET_IN_IWRAM;
+
+        // EWRAM should be 0x8000 bytes after IWRAM (32KB IWRAM size)
+        const ewramBase = iwramBase + 0x8000;
+
+        // Validate: read from the supposed saveblock and check it makes sense
+        const sb1EwramOffset = val1 - 0x02000000;
+        const testAddr = ewramBase + sb1EwramOffset;
+
+        if (testAddr >= 0 && testAddr + 0x1000 < state.length) {
+          // Try to read player name from SaveBlock2 (at offset 0x0 in SB2)
+          const sb2EwramOffset = val2 - 0x02000000;
+          const nameAddr = ewramBase + sb2EwramOffset;
+
+          if (nameAddr >= 0 && nameAddr + 8 < state.length) {
+            const nameByte = state[nameAddr];
+            // Valid Pokemon text starts with 0xBB-0xEE range (letters)
+            if (nameByte >= 0xBB && nameByte <= 0xEE) {
+              console.log(`Pattern match at offset 0x${i.toString(16)}:`);
+              console.log(`  SB1=0x${val1.toString(16)}, SB2=0x${val2.toString(16)}`);
+              console.log(`  Calculated IWRAM base: 0x${iwramBase.toString(16)}`);
+              console.log(`  Calculated EWRAM base: 0x${ewramBase.toString(16)}`);
+              console.log(`  Name first byte: 0x${nameByte.toString(16)}`);
+              return { iwramBase, ewramBase, headerOffset: i - MGBA_IWRAM_OFFSET - SB_PTR_OFFSET_IN_IWRAM };
+            }
+          }
+        }
+      }
+    }
+
+    // Last resort: try to find EWRAM by looking for Pokemon party signature
+    console.log('Pointer scan failed, trying alternate pattern detection...');
+    return this.scanForAlternatePatterns(state);
+  }
+
+  // Check if two values form a valid saveblock pointer pair
+  isValidSaveblockPair(ptr1, ptr2) {
+    const isEWRAM = (p) => (p >>> 0) >= 0x02000000 && (p >>> 0) <= 0x0203FFFF;
+
+    if (!isEWRAM(ptr1) || !isEWRAM(ptr2)) return false;
+
+    // SaveBlock1 and SaveBlock2 should be reasonably close together
+    // and in the expected order (SB1 is typically lower in memory)
+    const diff = Math.abs((ptr1 >>> 0) - (ptr2 >>> 0));
+
+    // They're typically within 0x5000 bytes of each other
+    return diff > 0 && diff < 0x10000;
+  }
+
+  // Alternate pattern detection when saveblock pointers aren't found
+  scanForAlternatePatterns(state) {
+    // mGBA save state has game title at offset 0x10 and game code at offset 0x1C
+    // Pokemon Fire Red game codes: "BPRE" (English), "BPRJ" (Japanese), etc.
+    const MGBA_IWRAM_OFFSET = 0x19000;
+    const MGBA_EWRAM_OFFSET = 0x21000;
+
+    console.log('Searching for Pokemon Fire Red game code signature...');
+
+    // Search for "BPRE" or "BPRJ" game codes
+    const gameCodes = ['BPRE', 'BPRJ', 'BPRF', 'BPRD', 'BPRS', 'BPRI'];
+
+    for (let i = 0; i < state.length - 0x61000; i++) {
+      for (const code of gameCodes) {
+        // Check if game code matches at offset 0x1C from potential state start
+        const codeOffset = i + 0x1C;
+        if (codeOffset + 4 >= state.length) continue;
+
+        const found = code.split('').every((ch, j) => state[codeOffset + j] === ch.charCodeAt(0));
+        if (found) {
+          console.log(`Found game code "${code}" at offset 0x${codeOffset.toString(16)}`);
+          console.log(`  State would start at offset 0x${i.toString(16)}`);
+
+          const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
+          const testEWRAMBase = i + MGBA_EWRAM_OFFSET;
+
+          // Verify by checking saveblock pointers
+          if (testIWRAMBase + 0x5010 < state.length) {
+            const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + 0x5008);
+            const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + 0x500C);
+
+            console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+
+            if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
+              console.log(`  Valid saveblock pointers confirmed!`);
+              return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
+            }
+          }
+        }
+      }
+    }
+
+    // Try looking for "POKEMON FIRE" game title at offset 0x10
+    console.log('Searching for "POKEMON FIRE" title...');
+    const title = 'POKEMON FIRE';
+    for (let i = 0; i < state.length - 0x61000; i++) {
+      const titleOffset = i + 0x10;
+      if (titleOffset + 12 >= state.length) continue;
+
+      const found = title.split('').every((ch, j) => state[titleOffset + j] === ch.charCodeAt(0));
+      if (found) {
+        console.log(`Found title at offset 0x${titleOffset.toString(16)}`);
+
+        const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
+        const testEWRAMBase = i + MGBA_EWRAM_OFFSET;
+
+        if (testIWRAMBase + 0x5010 < state.length) {
+          const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + 0x5008);
+          const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + 0x500C);
+
+          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+
+          if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
+            return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
+          }
+        }
+      }
+    }
+
+    console.log('No alternate patterns found');
+    return null;
+  }
+
+  // Read unsigned 32-bit little-endian value from array
+  readU32FromArray(arr, offset) {
+    if (offset < 0 || offset + 4 > arr.length) return 0;
+    return (arr[offset] | (arr[offset + 1] << 8) | (arr[offset + 2] << 16) | (arr[offset + 3] << 24)) >>> 0;
+  }
+
   // Legacy heap scanning - kept as backup
   findGBAMemoryBase() {
     // Heap scanning is unreliable, prefer save state parsing
@@ -821,8 +1010,6 @@ class EmulatorManager {
 
   testMemoryReads() {
     console.log('\n--- Test reads ---');
-    console.log('Map bank (0x02031DBC):', this.readGBAByte(0x02031DBC));
-    console.log('Map number (0x02031DBD):', this.readGBAByte(0x02031DBD));
     console.log('SB1 pointer (0x03005008):', this.readGBADword(0x03005008)?.toString(16));
     console.log('SB2 pointer (0x0300500C):', this.readGBADword(0x0300500C)?.toString(16));
 
@@ -831,9 +1018,71 @@ class EmulatorManager {
     console.log('Location:', this.readCurrentLocation());
     console.log('Badges:', this.readBadgeCount());
     console.log('Playtime:', this.readPlaytime());
-    console.log('Money:', this.readMoney());
     console.log('Player Name:', this.readPlayerName());
     console.log('Party:', this.readPartyData());
+  }
+
+  // Debug function to dump party Pokemon raw bytes
+  debugPartyRaw() {
+    console.log('=== Party Pokemon Raw Debug ===');
+
+    const partyCountAddr = EmulatorManager.ADDRESSES.PARTY_COUNT;
+    const partyDataAddr = EmulatorManager.ADDRESSES.PARTY_DATA;
+
+    console.log(`Party count address: 0x${partyCountAddr.toString(16)}`);
+    console.log(`Party data address: 0x${partyDataAddr.toString(16)}`);
+
+    // Read bytes around party count to find it
+    console.log('\nBytes around party count address:');
+    for (let offset = -8; offset <= 8; offset++) {
+      const val = this.readGBAByte(partyCountAddr + offset);
+      console.log(`  0x${(partyCountAddr + offset).toString(16)}: ${val}`);
+    }
+
+    // Read first Pokemon structure
+    console.log('\nFirst Pokemon (100 bytes):');
+    const pokemon1 = this.readGBABytes(partyDataAddr, 100);
+    if (pokemon1) {
+      // Show key offsets
+      console.log('  PID (0-3):', pokemon1.slice(0, 4).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      console.log('  Nickname (8-17):', pokemon1.slice(8, 18).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      console.log('  Level (84):', pokemon1[84]);
+      console.log('  HP (86-87):', pokemon1[86] | (pokemon1[87] << 8));
+      console.log('  Max HP (88-89):', pokemon1[88] | (pokemon1[89] << 8));
+    }
+
+    return 'Debug complete';
+  }
+
+  // Debug function to find correct offsets by searching for known values
+  debugFindOffsets(knownMoney = null, knownLevel = null) {
+    console.log('=== Finding Correct Offsets ===');
+
+    const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
+    console.log(`SB1 at: 0x${sb1Ptr?.toString(16)}`);
+
+    if (knownMoney !== null) {
+      console.log(`\nSearching for money value ${knownMoney} in SB1...`);
+      for (let offset = 0; offset < 0x2000; offset += 4) {
+        const val = this.readGBADword(sb1Ptr + offset);
+        if (val === knownMoney) {
+          console.log(`  Found at offset 0x${offset.toString(16)}`);
+        }
+      }
+    }
+
+    if (knownLevel !== null) {
+      console.log(`\nSearching for level ${knownLevel} in party area...`);
+      const partyBase = EmulatorManager.ADDRESSES.PARTY_DATA;
+      for (let offset = 0; offset < 600; offset++) {
+        const val = this.readGBAByte(partyBase + offset);
+        if (val === knownLevel) {
+          console.log(`  Found at offset ${offset} (byte ${offset % 100} of Pokemon ${Math.floor(offset / 100)})`);
+        }
+      }
+    }
+
+    return 'Search complete';
   }
 
   // Read a byte from GBA memory address
@@ -911,202 +1160,265 @@ class EmulatorManager {
   }
 
   // Pokemon Fire Red memory addresses
-  // Reference: https://datacrystal.tcrf.net/wiki/Pok%C3%A9mon_FireRed_and_LeafGreen:RAM_map
+  // Reference: https://github.com/pret/pokefirered (decompilation project)
   static ADDRESSES = {
     // Save block pointers in IWRAM
     SAVEBLOCK1_PTR: 0x03005008,  // Map/flags data pointer
     SAVEBLOCK2_PTR: 0x0300500C,  // Personal data pointer (name, playtime, etc.)
+    SAVEBLOCK3_PTR: 0x03005010,  // Pokemon storage pointer
 
-    // Direct EWRAM addresses (when save blocks are loaded)
-    CURRENT_MAP_BANK: 0x02031DBC,     // Current map bank ID
-    CURRENT_MAP_NUMBER: 0x02031DBD,   // Current map number within bank
-    MAP_HEADER: 0x02036DFC,           // Pointer to current map header
+    // Save block 1 offsets (player state, map, flags)
+    SB1_X_POS: 0x0000,                // 2 bytes - X position
+    SB1_Y_POS: 0x0002,                // 2 bytes - Y position
+    SB1_MAP_GROUP: 0x0004,            // 1 byte - Map group/bank
+    SB1_MAP_NUM: 0x0005,              // 1 byte - Map number within group
+    SB1_MONEY: 0x0290,                // 4 bytes - Money (encrypted with security key)
+    SB1_COINS: 0x0294,                // 2 bytes - Game corner coins
+    SB1_FLAGS: 0x0EE0,                // Flags array (0x120 bytes)
+    SB1_SECURITY_KEY: 0x0AF8,         // 4 bytes - XOR key for money/coins
 
-    // Player name (direct address, may need saveblock pointer method)
-    PLAYER_NAME: 0x020245CC,          // 8 bytes, Pokemon text encoding
-
-    // Party Pokemon data
-    PARTY_COUNT: 0x02024284,          // Number of Pokemon in party (1 byte)
-    PARTY_DATA: 0x02024284,           // Party data starts here (6 x 100 bytes)
-
-    // Save block offsets (relative to saveblock pointer)
+    // Save block 2 offsets (trainer info)
     SB2_PLAYER_NAME: 0x0000,          // 8 bytes in saveblock2
     SB2_PLAYER_GENDER: 0x0008,        // 1 byte
+    SB2_TRAINER_ID: 0x000A,           // 4 bytes (visible ID + secret ID)
     SB2_PLAYTIME_HOURS: 0x000E,       // 2 bytes
     SB2_PLAYTIME_MINUTES: 0x0010,     // 1 byte
     SB2_PLAYTIME_SECONDS: 0x0011,     // 1 byte
+    SB2_OPTIONS: 0x0013,              // Game options
 
-    SB1_FLAGS: 0x0580,                // Flags array start in saveblock1
-    SB1_MONEY_OFFSET: 0x0490,         // Money (encrypted) in saveblock1
-    SB1_ENCRYPTION_KEY: 0x0F20,       // XOR key for money in saveblock1
+    // Party data - in EWRAM, separate from saveblocks
+    PARTY_COUNT: 0x02024284,          // 1 byte - Number of Pokemon in party (at start of party structure)
+    PARTY_DATA: 0x02024284,           // Party Pokemon array (6 x 100 bytes) - count is embedded
   };
 
-  // Pokemon Fire Red location names by map bank and number
-  // Format: 'bank:mapNum': 'Location Name'
-  // Reference: https://www.pokecommunity.com/threads/pokemon-fire-red-map-sizes-and-tile-information.165900/
+  // Pokemon Fire Red location names by map group and number
+  // Source: https://github.com/pret/pokefirered/blob/master/data/maps/map_groups.json
+  // Format: 'group:mapNum': 'Location Name'
   static LOCATION_NAMES = {
-    // Bank 0: Towns and Cities (overworld)
-    '0:0': 'Pallet Town',
-    '0:1': 'Viridian City',
-    '0:2': 'Pewter City',
-    '0:3': 'Cerulean City',
-    '0:4': 'Lavender Town',
-    '0:5': 'Vermilion City',
-    '0:6': 'Celadon City',
-    '0:7': 'Fuchsia City',
-    '0:8': 'Cinnabar Island',
-    '0:9': 'Indigo Plateau',
-    '0:10': 'Saffron City',
-    '0:11': 'One Island',
-    '0:12': 'Two Island',
-    '0:13': 'Three Island',
-    '0:14': 'Four Island',
-    '0:15': 'Five Island',
-    '0:16': 'Seven Island',
-    '0:17': 'Six Island',
+    // Group 0: gMapGroup_Link
+    '0:0': 'Battle Colosseum 2P',
+    '0:1': 'Trade Center',
+    '0:2': 'Record Corner',
+    '0:3': 'Battle Colosseum 4P',
+    '0:4': 'Union Room',
 
-    // Bank 1: Routes
-    '1:0': 'Route 1',
-    '1:1': 'Route 2',
-    '1:2': 'Route 3',
-    '1:3': 'Route 4',
-    '1:4': 'Route 5',
-    '1:5': 'Route 6',
-    '1:6': 'Route 7',
-    '1:7': 'Route 8',
-    '1:8': 'Route 9',
-    '1:9': 'Route 10',
-    '1:10': 'Route 11',
-    '1:11': 'Route 12',
-    '1:12': 'Route 13',
-    '1:13': 'Route 14',
-    '1:14': 'Route 15',
-    '1:15': 'Route 16',
-    '1:16': 'Route 17',
-    '1:17': 'Route 18',
-    '1:18': 'Route 19',
-    '1:19': 'Route 20',
-    '1:20': 'Route 21',
-    '1:21': 'Route 22',
-    '1:22': 'Route 23',
-    '1:23': 'Route 24',
-    '1:24': 'Route 25',
+    // Group 1: gMapGroup_Dungeons
+    '1:0': 'Viridian Forest',
+    '1:1': 'Mt. Moon 1F',
+    '1:2': 'Mt. Moon B1F',
+    '1:3': 'Mt. Moon B2F',
+    '1:4': 'S.S. Anne Exterior',
+    '1:5': 'S.S. Anne 1F Corridor',
+    '1:6': 'S.S. Anne 2F Corridor',
+    '1:7': 'S.S. Anne 3F Corridor',
+    '1:8': 'S.S. Anne B1F Corridor',
+    '1:9': 'S.S. Anne Deck',
+    '1:10': 'S.S. Anne Kitchen',
+    '1:11': "S.S. Anne Captain's Office",
+    '1:30': 'Underground Path North',
+    '1:31': 'Underground Path Tunnel',
+    '1:32': 'Underground Path South',
+    '1:36': "Diglett's Cave North",
+    '1:37': "Diglett's Cave",
+    '1:38': "Diglett's Cave South",
+    '1:39': 'Victory Road 1F',
+    '1:40': 'Victory Road 2F',
+    '1:41': 'Victory Road 3F',
+    '1:42': 'Rocket Hideout B1F',
+    '1:43': 'Rocket Hideout B2F',
+    '1:44': 'Rocket Hideout B3F',
+    '1:45': 'Rocket Hideout B4F',
+    '1:47': 'Silph Co. 1F',
+    '1:48': 'Silph Co. 2F',
+    '1:49': 'Silph Co. 3F',
+    '1:50': 'Silph Co. 4F',
+    '1:51': 'Silph Co. 5F',
+    '1:52': 'Silph Co. 6F',
+    '1:53': 'Silph Co. 7F',
+    '1:54': 'Silph Co. 8F',
+    '1:55': 'Silph Co. 9F',
+    '1:56': 'Silph Co. 10F',
+    '1:57': 'Silph Co. 11F',
+    '1:59': 'Pokemon Mansion 1F',
+    '1:60': 'Pokemon Mansion 2F',
+    '1:61': 'Pokemon Mansion 3F',
+    '1:62': 'Pokemon Mansion B1F',
+    '1:63': 'Safari Zone Center',
+    '1:64': 'Safari Zone East',
+    '1:65': 'Safari Zone North',
+    '1:66': 'Safari Zone West',
+    '1:71': 'Cerulean Cave 1F',
+    '1:72': 'Cerulean Cave 2F',
+    '1:73': 'Cerulean Cave B1F',
+    '1:74': "Pokemon League Lorelei's Room",
+    '1:75': "Pokemon League Bruno's Room",
+    '1:76': "Pokemon League Agatha's Room",
+    '1:77': "Pokemon League Lance's Room",
+    '1:78': "Pokemon League Champion's Room",
+    '1:79': 'Pokemon League Hall of Fame',
+    '1:80': 'Rock Tunnel 1F',
+    '1:81': 'Rock Tunnel B1F',
+    '1:82': 'Seafoam Islands 1F',
+    '1:83': 'Seafoam Islands B1F',
+    '1:84': 'Seafoam Islands B2F',
+    '1:85': 'Seafoam Islands B3F',
+    '1:86': 'Seafoam Islands B4F',
+    '1:87': 'Pokemon Tower 1F',
+    '1:88': 'Pokemon Tower 2F',
+    '1:89': 'Pokemon Tower 3F',
+    '1:90': 'Pokemon Tower 4F',
+    '1:91': 'Pokemon Tower 5F',
+    '1:92': 'Pokemon Tower 6F',
+    '1:93': 'Pokemon Tower 7F',
+    '1:94': 'Power Plant',
 
-    // Bank 3: Dungeons and special areas
-    '3:0': 'Viridian Forest',
-    '3:1': 'Mt. Moon',
-    '3:2': 'S.S. Anne',
-    '3:3': 'Underground Path',
-    '3:4': 'Pokemon Tower',
-    '3:5': 'Seafoam Islands',
-    '3:6': 'Victory Road',
-    '3:7': 'Cerulean Cave',
-    '3:8': 'Rock Tunnel',
-    '3:9': 'Safari Zone',
-    '3:10': 'Pokemon Mansion',
-    '3:11': 'Power Plant',
+    // Group 2: gMapGroup_SpecialArea
+    '2:0': 'Navel Rock',
+    '2:1': 'Trainer Tower 1F',
+    '2:10': 'Trainer Tower Lobby',
 
-    // Bank 4: Pallet Town buildings
+    // Group 3: gMapGroup_TownsAndRoutes (main overworld)
+    '3:0': 'Pallet Town',
+    '3:1': 'Viridian City',
+    '3:2': 'Pewter City',
+    '3:3': 'Cerulean City',
+    '3:4': 'Lavender Town',
+    '3:5': 'Vermilion City',
+    '3:6': 'Celadon City',
+    '3:7': 'Fuchsia City',
+    '3:8': 'Cinnabar Island',
+    '3:9': 'Indigo Plateau',
+    '3:10': 'Saffron City',
+    '3:11': 'Saffron City',
+    '3:12': 'One Island',
+    '3:13': 'Two Island',
+    '3:14': 'Three Island',
+    '3:15': 'Four Island',
+    '3:16': 'Five Island',
+    '3:17': 'Seven Island',
+    '3:18': 'Six Island',
+    '3:19': 'Route 1',
+    '3:20': 'Route 2',
+    '3:21': 'Route 3',
+    '3:22': 'Route 4',
+    '3:23': 'Route 5',
+    '3:24': 'Route 6',
+    '3:25': 'Route 7',
+    '3:26': 'Route 8',
+    '3:27': 'Route 9',
+    '3:28': 'Route 10',
+    '3:29': 'Route 11',
+    '3:30': 'Route 12',
+    '3:31': 'Route 13',
+    '3:32': 'Route 14',
+    '3:33': 'Route 15',
+    '3:34': 'Route 16',
+    '3:35': 'Route 17',
+    '3:36': 'Route 18',
+    '3:37': 'Route 19',
+    '3:38': 'Route 20',
+    '3:39': 'Route 21 North',
+    '3:40': 'Route 21 South',
+    '3:41': 'Route 22',
+    '3:42': 'Route 23',
+    '3:43': 'Route 24',
+    '3:44': 'Route 25',
+    '3:45': 'Kindle Road',
+    '3:46': 'Treasure Beach',
+    '3:47': 'Cape Brink',
+    '3:48': 'Bond Bridge',
+    '3:49': 'Three Island Port',
+    '3:54': 'Resort Gorgeous',
+    '3:55': 'Water Labyrinth',
+    '3:56': 'Five Island Meadow',
+    '3:57': 'Memorial Pillar',
+    '3:58': 'Outcast Island',
+    '3:59': 'Green Path',
+    '3:60': 'Water Path',
+    '3:61': 'Ruin Valley',
+    '3:62': 'Trainer Tower',
+    '3:63': 'Sevault Canyon Entrance',
+    '3:64': 'Sevault Canyon',
+    '3:65': 'Tanoby Ruins',
+
+    // Group 4: gMapGroup_IndoorPallet
     '4:0': "Player's House 1F",
     '4:1': "Player's House 2F",
     '4:2': "Rival's House",
-    '4:3': "Oak's Lab",
+    '4:3': "Prof. Oak's Lab",
 
-    // Bank 5: Viridian City buildings
-    '5:0': 'Viridian House',
-    '5:1': 'Viridian Gym',
-    '5:2': 'Viridian School',
-    '5:3': 'Viridian Mart',
+    // Group 5: gMapGroup_IndoorViridian
+    '5:0': 'Viridian City House',
+    '5:1': 'Viridian City Gym',
+    '5:2': 'Viridian City School',
+    '5:3': 'Viridian City Mart',
     '5:4': 'Viridian Pokemon Center',
 
-    // Bank 6: Pewter City buildings
+    // Group 6: gMapGroup_IndoorPewter
     '6:0': 'Pewter Museum 1F',
     '6:1': 'Pewter Museum 2F',
-    '6:2': 'Pewter Gym',
-    '6:3': 'Pewter Mart',
-    '6:4': 'Pewter House',
+    '6:2': 'Pewter City Gym',
+    '6:3': 'Pewter City Mart',
+    '6:4': 'Pewter City House',
     '6:5': 'Pewter Pokemon Center',
 
-    // Bank 7: Cerulean City buildings
-    '7:0': 'Cerulean House',
-    '7:1': 'Cerulean Robbed House',
-    '7:2': 'Cerulean House',
+    // Group 7: gMapGroup_IndoorCerulean
+    '7:0': 'Cerulean City House',
     '7:3': 'Cerulean Pokemon Center',
-    '7:5': 'Cerulean Gym',
+    '7:5': 'Cerulean City Gym',
     '7:6': 'Cerulean Bike Shop',
-    '7:7': 'Cerulean Mart',
+    '7:7': 'Cerulean City Mart',
 
-    // Bank 8: Lavender Town buildings
+    // Group 8: gMapGroup_IndoorLavender
     '8:0': 'Lavender Pokemon Center',
-    '8:2': 'Lavender House',
-    '8:3': 'Lavender House',
     '8:4': 'Lavender Name Rater',
     '8:5': 'Lavender Mart',
 
-    // Bank 9: Vermilion City buildings
-    '9:0': 'Vermilion House',
+    // Group 9: gMapGroup_IndoorVermilion
     '9:1': 'Vermilion Pokemon Center',
-    '9:3': 'Vermilion Pokemon Fan Club',
+    '9:3': 'Pokemon Fan Club',
     '9:5': 'Vermilion Mart',
     '9:6': 'Vermilion Gym',
 
-    // Bank 10: Celadon City buildings
+    // Group 10: gMapGroup_IndoorCeladon
     '10:0': 'Celadon Dept Store 1F',
     '10:1': 'Celadon Dept Store 2F',
     '10:2': 'Celadon Dept Store 3F',
     '10:3': 'Celadon Dept Store 4F',
     '10:4': 'Celadon Dept Store 5F',
     '10:5': 'Celadon Dept Store Roof',
-    '10:6': 'Celadon Dept Store Elevator',
     '10:12': 'Celadon Pokemon Center',
     '10:14': 'Celadon Game Corner',
     '10:15': 'Celadon Prize Room',
     '10:16': 'Celadon Gym',
-    '10:17': 'Celadon Diner',
 
-    // Bank 11: Fuchsia City buildings
+    // Group 11: gMapGroup_IndoorFuchsia
     '11:0': 'Safari Zone Gate',
     '11:1': 'Fuchsia Mart',
     '11:3': 'Fuchsia Gym',
     '11:5': 'Fuchsia Pokemon Center',
     '11:7': "Warden's House",
 
-    // Bank 12: Cinnabar Island buildings
+    // Group 12: gMapGroup_IndoorCinnabar
     '12:0': 'Cinnabar Gym',
-    '12:1': 'Cinnabar Lab',
+    '12:1': 'Pokemon Lab',
     '12:5': 'Cinnabar Pokemon Center',
-    '12:7': 'Cinnabar Mart',
+    '12:6': 'Cinnabar Mart',
 
-    // Bank 13: Indigo Plateau / Pokemon League
+    // Group 13: gMapGroup_IndoorIndigoPlateau
     '13:0': 'Indigo Plateau Pokemon Center',
-    '13:1': "Lorelei's Room",
-    '13:2': "Bruno's Room",
-    '13:3': "Agatha's Room",
-    '13:4': "Lance's Room",
-    '13:5': "Champion's Room",
-    '13:6': 'Hall of Fame',
 
-    // Bank 14: Saffron City buildings
+    // Group 14: gMapGroup_IndoorSaffron
     '14:0': "Copycat's House 1F",
     '14:1': "Copycat's House 2F",
     '14:2': 'Fighting Dojo',
     '14:3': 'Saffron Gym',
-    '14:4': 'Saffron House',
     '14:5': 'Saffron Mart',
-    '14:6': 'Silph Co 1F',
     '14:7': 'Saffron Pokemon Center',
 
-    // Bank 15: Silph Co floors
-    '15:0': 'Silph Co 2F',
-    '15:1': 'Silph Co 3F',
-    '15:2': 'Silph Co 4F',
-    '15:3': 'Silph Co 5F',
-    '15:4': 'Silph Co 6F',
-    '15:5': 'Silph Co 7F',
-    '15:6': 'Silph Co 8F',
-    '15:7': 'Silph Co 9F',
-    '15:8': 'Silph Co 10F',
-    '15:9': 'Silph Co 11F',
+    // Group 15: gMapGroup_IndoorRoute2
+    '15:0': 'Route 2 Gate',
+    '15:1': "Mr. Pokemon's House",
   };
 
   // Helper methods to read specific memory addresses
@@ -1151,34 +1463,25 @@ class EmulatorManager {
 
   readCurrentLocation() {
     try {
-      // Read map bank and map number from direct addresses
-      const mapBank = this.readGBAByte(EmulatorManager.ADDRESSES.CURRENT_MAP_BANK);
-      const mapNum = this.readGBAByte(EmulatorManager.ADDRESSES.CURRENT_MAP_NUMBER);
+      // Read location from saveblock1 - this is the authoritative source
+      const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
+      if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
+        console.log('Invalid saveblock1 pointer for location');
+        return null;
+      }
 
-      console.log(`Map read attempt: bank=${mapBank}, number=${mapNum}`);
+      const mapGroup = this.readGBAByte(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MAP_GROUP);
+      const mapNum = this.readGBAByte(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MAP_NUM);
 
-      if (mapBank === null || mapNum === null) {
-        console.log('Could not read map bank/number from direct addresses');
+      console.log(`Map read from SB1: group=${mapGroup}, number=${mapNum}`);
 
-        // Try alternative: read from saveblock1 structure
-        const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
-        if (sb1Ptr && sb1Ptr >= 0x02000000 && sb1Ptr <= 0x0203FFFF) {
-          // Location data might be at offset 0x4 in saveblock1
-          const altMapBank = this.readGBAByte(sb1Ptr + 0x4);
-          const altMapNum = this.readGBAByte(sb1Ptr + 0x5);
-          console.log(`Alt map read: sb1Ptr=0x${sb1Ptr.toString(16)}, bank=${altMapBank}, num=${altMapNum}`);
-
-          if (altMapBank !== null && altMapNum !== null) {
-            const key = `${altMapBank}:${altMapNum}`;
-            const locationName = EmulatorManager.LOCATION_NAMES[key];
-            return locationName || `Map ${altMapBank}-${altMapNum}`;
-          }
-        }
+      if (mapGroup === null || mapNum === null) {
+        console.log('Could not read map group/number');
         return null;
       }
 
       // Look up location name
-      const key = `${mapBank}:${mapNum}`;
+      const key = `${mapGroup}:${mapNum}`;
       const locationName = EmulatorManager.LOCATION_NAMES[key];
 
       if (locationName) {
@@ -1188,7 +1491,7 @@ class EmulatorManager {
 
       // Return raw coordinates if not in our lookup table
       console.log(`Location not in lookup table: ${key}`);
-      return `Map ${mapBank}-${mapNum}`;
+      return `Map ${mapGroup}-${mapNum}`;
     } catch (error) {
       console.error('Error reading location:', error);
       return null;
@@ -1264,21 +1567,51 @@ class EmulatorManager {
 
   readMoney() {
     try {
-      // Money in saveblock1 is XOR encrypted with a key
+      // Money in saveblock1 is XOR encrypted with security key
       const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
+        console.log('Invalid saveblock1 pointer for money');
         return null;
       }
 
-      const encryptedMoney = this.readGBADword(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MONEY_OFFSET);
-      const xorKey = this.readGBADword(sb1Ptr + EmulatorManager.ADDRESSES.SB1_ENCRYPTION_KEY);
+      console.log(`SB1 pointer: 0x${sb1Ptr.toString(16)}`);
+      console.log(`Money offset: 0x${EmulatorManager.ADDRESSES.SB1_MONEY.toString(16)} -> addr 0x${(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MONEY).toString(16)}`);
+      console.log(`Key offset: 0x${EmulatorManager.ADDRESSES.SB1_SECURITY_KEY.toString(16)} -> addr 0x${(sb1Ptr + EmulatorManager.ADDRESSES.SB1_SECURITY_KEY).toString(16)}`);
 
-      if (encryptedMoney === null || xorKey === null) {
+      const encryptedMoney = this.readGBADword(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MONEY);
+      const securityKey = this.readGBADword(sb1Ptr + EmulatorManager.ADDRESSES.SB1_SECURITY_KEY);
+
+      // Debug: dump bytes around security key area to find the right offset
+      console.log('Searching for security key (looking for non-zero 4-byte values around expected offset):');
+      for (const testOffset of [0x0AF8, 0x0F20, 0x1F20, 0x0500, 0x0504, 0x0508]) {
+        const testVal = this.readGBADword(sb1Ptr + testOffset);
+        if (testVal !== null && testVal !== 0) {
+          console.log(`  Offset 0x${testOffset.toString(16)}: 0x${(testVal>>>0).toString(16)}`);
+        }
+      }
+
+      if (encryptedMoney === null || securityKey === null) {
+        console.log('Could not read money or security key');
         return null;
       }
 
-      const money = (encryptedMoney ^ xorKey) >>> 0; // Convert to unsigned
-      console.log(`Money: ${money} (encrypted: 0x${encryptedMoney.toString(16)}, key: 0x${xorKey.toString(16)})`);
+      // If security key is 0, try without encryption (early game or different version)
+      let money;
+      if (securityKey === 0) {
+        // Try reading money as unencrypted - it should be a reasonable value (0-999999)
+        if (encryptedMoney >= 0 && encryptedMoney <= 999999) {
+          money = encryptedMoney;
+          console.log(`Money (unencrypted): ${money}`);
+        } else {
+          // Might be encrypted but we don't have the right key offset
+          money = encryptedMoney;
+          console.log(`Money: ${money} (key was 0, value may be incorrect)`);
+        }
+      } else {
+        money = (encryptedMoney ^ securityKey) >>> 0;
+        console.log(`Money: ${money} (encrypted: 0x${(encryptedMoney>>>0).toString(16)}, key: 0x${(securityKey>>>0).toString(16)})`);
+      }
+
       return money;
     } catch (error) {
       console.error('Error reading money:', error);
@@ -1288,35 +1621,30 @@ class EmulatorManager {
 
   readPartyData() {
     try {
-      // Party count and data are at the same starting address
-      // The first byte is party count, followed by 6 x 100 byte Pokemon structures
-      const partyAddr = EmulatorManager.ADDRESSES.PARTY_DATA;
-
-      // First read party count (might be at a different offset)
-      // Actually, party count is at 0x02024284, and party data starts at 0x02024284 + 4
-      // Let me check both patterns
-
-      const partyCount = this.readGBAByte(partyAddr);
-      if (partyCount === null || partyCount > 6) {
-        // Try alternative: count might be elsewhere
-        console.log('Could not read valid party count:', partyCount);
-        return [];
-      }
-
-      console.log(`Party count: ${partyCount}`);
+      // Party data starts at 0x02024284
+      // Party count is stored separately - we'll detect it by checking which Pokemon slots are valid
+      const pokemonSize = 100;
+      const dataStart = 0x02024284; // Verified correct address for Fire Red
 
       const party = [];
-      const pokemonSize = 100; // Each Pokemon structure is 100 bytes
-      const dataStart = partyAddr + 4; // Party data starts after count (usually 4 byte aligned)
 
-      for (let i = 0; i < partyCount && i < 6; i++) {
+      // Read up to 6 Pokemon, stopping when we hit an empty slot (PID = 0)
+      for (let i = 0; i < 6; i++) {
         const pokemonAddr = dataStart + (i * pokemonSize);
+        const pid = this.readGBADword(pokemonAddr);
+
+        // Empty slot has PID of 0
+        if (pid === null || pid === 0) {
+          break;
+        }
+
         const pokemonData = this.readPokemonData(pokemonAddr);
         if (pokemonData) {
           party.push(pokemonData);
         }
       }
 
+      console.log(`Party count (detected): ${party.length}`);
       return party;
     } catch (error) {
       console.error('Error reading party data:', error);
@@ -1328,18 +1656,22 @@ class EmulatorManager {
   readPokemonData(address) {
     try {
       // Pokemon data structure (Generation III) - 100 bytes total
-      // First 32 bytes are the "box" data (encrypted)
       // Bytes 0-3: Personality Value (PID)
       // Bytes 4-7: Original Trainer ID
       // Bytes 8-17: Nickname (10 bytes)
+      // Bytes 18-19: Language
+      // Bytes 20-31: OT Name (7 bytes + terminator)
+      // Bytes 32-79: Encrypted data substructures (48 bytes)
       // Bytes 80-83: Status condition
-      // Bytes 84-85: Current HP
-      // Bytes 86-87: Max HP
-      // Bytes 88-89: Attack
-      // Bytes 90-91: Defense
-      // Bytes 92-93: Speed
-      // Bytes 94-95: Sp. Attack
-      // Bytes 96-97: Sp. Defense
+      // Byte 84: Level
+      // Byte 85: Pokerus remaining
+      // Bytes 86-87: Current HP
+      // Bytes 88-89: Max HP
+      // Bytes 90-91: Attack
+      // Bytes 92-93: Defense
+      // Bytes 94-95: Speed
+      // Bytes 96-97: Sp. Attack
+      // Bytes 98-99: Sp. Defense
 
       const pid = this.readGBADword(address);
       if (pid === null || pid === 0) {
@@ -1353,17 +1685,23 @@ class EmulatorManager {
       ) : 'Unknown';
 
       // Read battle stats (unencrypted, at end of structure)
-      const currentHP = this.readGBAWord(address + 84);
-      const maxHP = this.readGBAWord(address + 86);
-      const level = this.readGBAByte(address + 84 - 1); // Level is at offset 83
+      const level = this.readGBAByte(address + 84);
+      const currentHP = this.readGBAWord(address + 86);
+      const maxHP = this.readGBAWord(address + 88);
+      const attack = this.readGBAWord(address + 90);
+      const defense = this.readGBAWord(address + 92);
+      const speed = this.readGBAWord(address + 94);
 
-      // Species ID is in the encrypted data section, harder to decode
-      // For now, just return what we can easily read
+      console.log(`Pokemon at 0x${address.toString(16)}: ${nickname}, Lv${level}, HP ${currentHP}/${maxHP}`);
+
       return {
         nickname,
         level: level || 0,
         currentHP: currentHP || 0,
         maxHP: maxHP || 0,
+        attack: attack || 0,
+        defense: defense || 0,
+        speed: speed || 0,
         pid: pid.toString(16)
       };
     } catch (error) {

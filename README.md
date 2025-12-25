@@ -475,3 +475,6 @@ GPL-3.0
 - EmulatorJS for GBA emulation
 - Pokemon Fire Red by Game Freak/Nintendo
 - Built with React, Express, PostgreSQL, and MinIO
+
+% TODOs
+- Merge folders to single docker file
