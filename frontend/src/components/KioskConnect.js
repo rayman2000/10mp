@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './KioskConnect.css';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+// Use empty string for relative URLs in production (nginx proxies /api to backend)
+const API_BASE_URL = process.env.REACT_APP_API_URL !== undefined
+  ? process.env.REACT_APP_API_URL
+  : 'http://localhost:3001';
 
 // Generate a cryptographically secure token
 const generateToken = (length = 16) => {

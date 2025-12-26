@@ -12,7 +12,7 @@ function App() {
   const [previousMessage, setPreviousMessage] = useState('Welcome to 10 Minute Pokemon! Make some progress and have fun!');
   const [kioskApproved, setKioskApproved] = useState(false); // Track if kiosk has been approved
   const [config, setConfig] = useState({
-    turnDurationMinutes: 3,
+    turnDurationMinutes: 10,
     autoSaveIntervalMinutes: 1
   });
 

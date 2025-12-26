@@ -1,0 +1,91 @@
+# Docker Compose for 10 Minute Pokemon
+# Includes app, PostgreSQL, and MinIO - everything needed to run
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: tenmp-app
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-tenmp_db}
+      DB_USERNAME: ${DB_USERNAME:-tenmp_user}
+      DB_PASSWORD: ${DB_PASSWORD:-tenmp_password}
+
+      # MinIO
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-game-saves}
+
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      CORS_ORIGIN_ADMIN: ${CORS_ORIGIN_ADMIN:-http://admin.localhost}
+
+      # Admin
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - app-logs:/var/log/supervisor
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: tenmp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-tenmp_db}
+      POSTGRES_USER: ${DB_USERNAME:-tenmp_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-tenmp_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-tenmp_user} -d ${DB_NAME:-tenmp_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: tenmp-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9001:9001"  # MinIO Console (optional, for debugging)
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  minio_data:
+  app-logs:
