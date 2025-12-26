@@ -152,3 +152,11 @@ npm run install:all    # Install all dependencies locally
 ├── docker-compose.yml     # App + PostgreSQL + MinIO
 └── .env                   # Environment configuration
 ```
+
+### Emulator use
+For development without a controller, the keyboard defaults are:
+
+- Arrow Keys: Move
+- Z: A Button
+- X: B Button
+- Enter: Start
