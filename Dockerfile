@@ -7,60 +7,69 @@
 # -----------------------------------------------------------------------------
 FROM node:20-alpine AS frontend-builder
 
-WORKDIR /build/frontend
+WORKDIR /build
 
-# Copy package files first for better layer caching
-COPY frontend/package*.json ./
+# Copy root package files for workspace resolution
+COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm ci
+# Copy frontend package.json for workspace
+COPY frontend/package.json frontend/
 
-# Copy source code
-COPY frontend/ ./
+# Install frontend dependencies using workspaces
+RUN npm ci --workspace=frontend
+
+# Copy frontend source code
+COPY frontend/ frontend/
 
 # Set production API URL - uses relative path since nginx will proxy
 ENV REACT_APP_API_URL=""
 
 # Build the React app
-RUN npm run build
+RUN npm run build --workspace=frontend
 
 # -----------------------------------------------------------------------------
 # Stage 2: Build Admin Frontend
 # -----------------------------------------------------------------------------
 FROM node:20-alpine AS admin-builder
 
-WORKDIR /build/admin
+WORKDIR /build
 
-# Copy package files first for better layer caching
-COPY admin/package*.json ./
+# Copy root package files for workspace resolution
+COPY package.json package-lock.json ./
 
-# Install dependencies (using npm install since admin is part of workspace without its own lock file)
-RUN npm install
+# Copy admin package.json for workspace
+COPY admin/package.json admin/
 
-# Copy source code
-COPY admin/ ./
+# Install admin dependencies using workspaces
+RUN npm ci --workspace=admin
+
+# Copy admin source code
+COPY admin/ admin/
 
 # Set production API URL - uses relative path since nginx will proxy
 ENV REACT_APP_API_URL=""
 
 # Build the React app
-RUN npm run build
+RUN npm run build --workspace=admin
 
 # -----------------------------------------------------------------------------
 # Stage 3: Prepare Backend
 # -----------------------------------------------------------------------------
 FROM node:20-alpine AS backend-builder
 
-WORKDIR /build/backend
+WORKDIR /build
 
-# Copy package files
-COPY backend/package*.json ./
+# Copy root package files for workspace resolution
+COPY package.json package-lock.json ./
 
-# Install production dependencies only
-RUN npm ci --only=production
+# Copy backend package.json for workspace
+COPY backend/package.json backend/
+
+# Install backend production dependencies only using workspaces
+RUN npm ci --workspace=backend --omit=dev
 
 # Copy backend source code
-COPY backend/ ./
+COPY backend/ backend/
 
 # -----------------------------------------------------------------------------
 # Stage 4: Production Runtime
@@ -88,6 +97,7 @@ COPY --from=admin-builder /build/admin/build /app/admin
 
 # Copy backend application
 COPY --from=backend-builder /build/backend /app/backend
+COPY --from=backend-builder /build/node_modules /app/node_modules
 
 # Copy configuration files
 COPY docker/nginx.conf /etc/nginx/nginx.conf
