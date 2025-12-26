@@ -12,8 +12,8 @@ WORKDIR /build
 # Copy root package files for workspace resolution
 COPY package.json package-lock.json ./
 
-# Copy frontend package.json for workspace
-COPY frontend/package.json frontend/
+# Copy frontend package.json and vite config for workspace
+COPY frontend/package.json frontend/vite.config.js frontend/
 
 # Install frontend dependencies using workspaces
 RUN npm ci --workspace=frontend
@@ -22,7 +22,7 @@ RUN npm ci --workspace=frontend
 COPY frontend/ frontend/
 
 # Set production API URL - uses relative path since nginx will proxy
-ENV REACT_APP_API_URL=""
+ENV VITE_API_URL=""
 
 # Build the React app
 RUN npm run build --workspace=frontend
@@ -37,8 +37,8 @@ WORKDIR /build
 # Copy root package files for workspace resolution
 COPY package.json package-lock.json ./
 
-# Copy admin package.json for workspace
-COPY admin/package.json admin/
+# Copy admin package.json and vite config for workspace
+COPY admin/package.json admin/vite.config.js admin/
 
 # Install admin dependencies using workspaces
 RUN npm ci --workspace=admin
@@ -47,7 +47,7 @@ RUN npm ci --workspace=admin
 COPY admin/ admin/
 
 # Set production API URL - uses relative path since nginx will proxy
-ENV REACT_APP_API_URL=""
+ENV VITE_API_URL=""
 
 # Build the React app
 RUN npm run build --workspace=admin
