@@ -2,8 +2,8 @@ import axios from 'axios';
 
 // Use empty string for relative URLs in production (nginx proxies /api to backend)
 // Fall back to localhost:3001 only if env var is not set at all
-const API_BASE_URL = process.env.REACT_APP_API_URL !== undefined
-  ? process.env.REACT_APP_API_URL
+const API_BASE_URL = import.meta.env.VITE_API_URL !== undefined
+  ? import.meta.env.VITE_API_URL
   : 'http://localhost:3001';
 
 const api = axios.create({
