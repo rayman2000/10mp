@@ -1,0 +1,51 @@
+# Dependencies - reinstalled in container
+node_modules
+*/node_modules
+**/node_modules
+
+# Build outputs - rebuilt in container
+frontend/build
+admin/build
+dist
+*.tsbuildinfo
+
+# Git
+.git
+.gitignore
+
+# IDE and editor files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs
+npm-debug.log*
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Development files
+.devcontainer
+*.md
+LICENSE
+.eslintcache
+coverage
+
+# Docker files (not needed in context)
+docker-compose*.yml
+Dockerfile*
+
+# Test files
+**/__tests__
+**/*.test.js
+**/*.spec.js

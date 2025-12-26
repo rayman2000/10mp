@@ -19,6 +19,7 @@ const AdminPanel = () => {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [message, setMessage] = useState('');
+  const [selectedTurn, setSelectedTurn] = useState(null);
 
   // Fetch stats, game turns, and pending kiosks
   const fetchData = async () => {
@@ -190,6 +191,136 @@ const AdminPanel = () => {
     return date.toLocaleString();
   };
 
+  // Format playtime (seconds to hours:minutes:seconds)
+  const formatPlaytime = (seconds) => {
+    if (!seconds) return '0:00:00';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Format money with commas
+  const formatMoney = (amount) => {
+    if (!amount && amount !== 0) return 'Unknown';
+    return `₽${amount.toLocaleString()}`;
+  };
+
+  // Turn Detail Modal Component
+  const TurnDetailModal = ({ turn, onClose }) => {
+    if (!turn) return null;
+
+    const partyData = turn.partyData || [];
+
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>Turn Details</h2>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+
+          <div className="modal-body">
+            <div className="detail-section">
+              <h3>Turn Info</h3>
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <span className="detail-label">Turn ID</span>
+                  <span className="detail-value">#{turn.id}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">Player</span>
+                  <span className="detail-value">{turn.playerName}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">Ended At</span>
+                  <span className="detail-value">{formatDate(turn.turnEndedAt)}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">Turn Duration</span>
+                  <span className="detail-value">
+                    {Math.floor((turn.turnDuration || 0) / 60)}m {(turn.turnDuration || 0) % 60}s
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <h3>Game State</h3>
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <span className="detail-label">Location</span>
+                  <span className="detail-value">{turn.location || 'Unknown'}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">Badges</span>
+                  <span className="detail-value">{turn.badgeCount || 0} / 8</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">Money</span>
+                  <span className="detail-value">{formatMoney(turn.money)}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">Total Playtime</span>
+                  <span className="detail-value">{formatPlaytime(turn.playtime)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <h3>Party ({partyData.length} Pokemon)</h3>
+              {partyData.length > 0 ? (
+                <div className="party-grid">
+                  {partyData.map((pokemon, index) => (
+                    <div key={index} className="party-pokemon">
+                      <div className="pokemon-slot">#{index + 1}</div>
+                      <div className="pokemon-info">
+                        <div className="pokemon-name">{pokemon.nickname || pokemon.species || 'Unknown'}</div>
+                        {pokemon.species && pokemon.nickname && pokemon.nickname !== pokemon.species && (
+                          <div className="pokemon-species">({pokemon.species})</div>
+                        )}
+                        <div className="pokemon-details">
+                          {pokemon.level && <span>Lv. {pokemon.level}</span>}
+                          {pokemon.hp !== undefined && pokemon.maxHp !== undefined && (
+                            <span>HP: {pokemon.hp}/{pokemon.maxHp}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="no-party">No party data available</p>
+              )}
+            </div>
+
+            {turn.invalidatedAt && (
+              <div className="detail-section detail-section-warning">
+                <h3>Invalidation</h3>
+                <p>This turn was invalidated on {formatDate(turn.invalidatedAt)}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="modal-footer">
+            {turn.saveStateUrl && !turn.invalidatedAt && (
+              <button
+                onClick={() => { onClose(); handleRestoreTurn(turn); }}
+                className="admin-button-success"
+                disabled={loading}
+              >
+                Restore to This Turn
+              </button>
+            )}
+            <button onClick={onClose} className="admin-button-secondary">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Login screen
   if (!token) {
     return (
@@ -219,6 +350,9 @@ const AdminPanel = () => {
   // Main admin panel
   return (
     <div className="admin-panel">
+      {selectedTurn && (
+        <TurnDetailModal turn={selectedTurn} onClose={() => setSelectedTurn(null)} />
+      )}
       <div className="admin-header">
         <h1>10MP Admin Panel</h1>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
@@ -372,7 +506,8 @@ const AdminPanel = () => {
                 {gameTurns.map((turn) => (
                   <div
                     key={turn.id}
-                    className={`save-item ${turn.invalidatedAt ? 'save-item-invalidated' : ''}`}
+                    className={`save-item save-item-clickable ${turn.invalidatedAt ? 'save-item-invalidated' : ''}`}
+                    onClick={() => setSelectedTurn(turn)}
                   >
                     <div className="save-info">
                       <div className="save-time">
@@ -392,7 +527,7 @@ const AdminPanel = () => {
                     </div>
                     {turn.saveStateUrl && !turn.invalidatedAt && (
                       <button
-                        onClick={() => handleRestoreTurn(turn)}
+                        onClick={(e) => { e.stopPropagation(); handleRestoreTurn(turn); }}
                         className="admin-button-small"
                         disabled={loading}
                         title="Restore game to this point"
