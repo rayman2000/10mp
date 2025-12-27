@@ -1,4 +1,5 @@
 const Minio = require('minio');
+const { Readable } = require('stream');
 
 class RomStorage {
   constructor() {
@@ -73,11 +74,12 @@ class RomStorage {
         bufferLength: buffer.length
       });
 
-      // Simple upload without metadata to avoid S3 compatibility issues
+      // Use stream-based upload for large files
+      const stream = Readable.from(buffer);
       await this.minioClient.putObject(
         this.bucketName,
         objectName,
-        buffer,
+        stream,
         buffer.length
       );
 
@@ -90,8 +92,13 @@ class RomStorage {
         message: error.message,
         key: error.key,
         resource: error.resource,
-        requestId: error.requestId
+        requestId: error.requestId,
+        cause: error.cause,
+        errno: error.errno,
+        syscall: error.syscall
       });
+      // Log all enumerable properties
+      console.error('All error properties:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       throw error;
     }
   }
