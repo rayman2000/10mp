@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEmulator } from '../hooks/useEmulator';
-import { gameApi, saveApi } from '../services/api';
+import { gameApi } from '../services/api';
 import './GameScreen.css';
 
-const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, config, previousMessage }) => {
+const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, config, previousMessage, prefetchedSaveData }) => {
   const containerRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false); // Ref to avoid recreating saveTurnData callback
@@ -14,8 +14,6 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
     isRunning,
     error,
     startGame,
-    pauseGame,
-    resumeGame,
     saveGame,
     loadGame,
     scrapeData
@@ -72,79 +70,31 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
     }
   }, [player, turnStartTime, config, saveGame, scrapeData]);
 
-  // Track if we've already loaded the last save to prevent re-loading
+  // Track if we've already loaded the save to prevent re-loading
   const lastSaveLoadedRef = useRef(false);
 
-  // Function to fetch and load the last save state from the backend
-  const loadLastSaveState = useCallback(async () => {
-    try {
-      console.log('Fetching last save state...');
-
-      // Get the latest valid save from backend
-      const latestSave = await saveApi.getLatestSave();
-
-      if (latestSave && latestSave.saveStateUrl) {
-        console.log(`Found save from turn ${latestSave.turnId}: ${latestSave.saveStateUrl}`);
-
-        // Download the save data
-        const saveData = await saveApi.downloadSave(latestSave.saveStateUrl);
-
-        if (saveData) {
-          console.log(`Downloaded save data: ${saveData.byteLength} bytes`);
-
-          // Convert ArrayBuffer to Base64 for loadGame
-          const base64 = btoa(
-            new Uint8Array(saveData).reduce((data, byte) => data + String.fromCharCode(byte), '')
-          );
-
-          const loaded = loadGame(base64);
-          if (loaded) {
-            console.log('✅ Last save state loaded successfully!');
-          } else {
-            console.warn('Failed to load save state into emulator');
-          }
-        }
-      } else {
-        console.log('No previous save state found - starting fresh game');
-      }
-    } catch (error) {
-      // 404 means no saves exist yet - that's fine, start fresh
-      if (error.response?.status === 404) {
-        console.log('No previous save state found - starting fresh game');
-      } else {
-        console.error('Error loading last save state:', error);
-      }
-      // Don't fail the game start if save loading fails
-    }
-  }, [loadGame]);
-
+  // Load prefetched save data when emulator is ready
   useEffect(() => {
-    if (isLoaded) {
-      // Start the game
+    if (isLoaded && !lastSaveLoadedRef.current) {
+      lastSaveLoadedRef.current = true;
       startGame();
 
-      // Load the last save state after a short delay to let the emulator fully start
-      if (!lastSaveLoadedRef.current) {
-        lastSaveLoadedRef.current = true;
-        setTimeout(async () => {
-          await loadLastSaveState();
-        }, 2000); // Wait 2 seconds for emulator to be ready
-      }
+      // Load the prefetched save data after a small delay
+      setTimeout(() => {
+        if (prefetchedSaveData) {
+          console.log('Loading prefetched save data...');
+          const loaded = loadGame(prefetchedSaveData);
+          if (loaded) {
+            console.log('✅ Prefetched save state loaded successfully!');
+          } else {
+            console.warn('Failed to load prefetched save state');
+          }
+        } else {
+          console.log('No prefetched save data - starting fresh game');
+        }
+      }, 500);
     }
-  }, [isLoaded, startGame, loadLastSaveState]);
-
-  // Pause/resume emulator based on active state to save CPU
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    if (isActive) {
-      console.log('Resuming emulator');
-      resumeGame();
-    } else {
-      console.log('Pausing emulator');
-      pauseGame();
-    }
-  }, [isActive, isLoaded, resumeGame, pauseGame]);
+  }, [isLoaded, startGame, loadGame, prefetchedSaveData]);
 
   // Focus emulator when becoming active or when emulator becomes ready
   useEffect(() => {
