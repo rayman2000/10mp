@@ -3,7 +3,9 @@ const Minio = require('minio');
 class RomStorage {
   constructor() {
     this.minioClient = null;
-    this.bucketName = process.env.MINIO_ROM_BUCKET || 'game-roms';
+    // Use same bucket as saves, with roms/ prefix
+    this.bucketName = process.env.MINIO_BUCKET || 'game-saves';
+    this.prefix = 'roms/';
     this.initialized = false;
   }
 
@@ -18,7 +20,7 @@ class RomStorage {
       const accessKey = process.env.MINIO_ACCESS_KEY || 'minioadmin';
       const secretKey = process.env.MINIO_SECRET_KEY || 'minioadmin';
 
-      console.log(`Initializing ROM storage: ${endpoint}:${port}, SSL: ${useSSL}`);
+      console.log(`Initializing ROM storage: ${endpoint}:${port}, bucket: ${this.bucketName}, prefix: ${this.prefix}`);
 
       this.minioClient = new Minio.Client({
         endPoint: endpoint,
@@ -31,11 +33,11 @@ class RomStorage {
       // Check if bucket exists, create if not
       const bucketExists = await this.minioClient.bucketExists(this.bucketName);
       if (!bucketExists) {
-        console.log(`Creating ROM bucket: ${this.bucketName}`);
+        console.log(`Creating bucket: ${this.bucketName}`);
         await this.minioClient.makeBucket(this.bucketName, 'us-east-1');
-        console.log(`ROM bucket ${this.bucketName} created successfully`);
+        console.log(`Bucket ${this.bucketName} created successfully`);
       } else {
-        console.log(`ROM bucket ${this.bucketName} already exists`);
+        console.log(`Using existing bucket: ${this.bucketName}`);
       }
 
       this.initialized = true;
@@ -61,6 +63,7 @@ class RomStorage {
     try {
       // Sanitize filename - only allow alphanumeric, dash, underscore, and dot
       const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const objectName = this.prefix + sanitizedFilename;
 
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
 
@@ -72,13 +75,13 @@ class RomStorage {
 
       await this.minioClient.putObject(
         this.bucketName,
-        sanitizedFilename,
+        objectName,
         buffer,
         buffer.length,
         metadata
       );
 
-      console.log(`ROM uploaded: ${sanitizedFilename} (${buffer.length} bytes)`);
+      console.log(`ROM uploaded: ${objectName} (${buffer.length} bytes)`);
       return sanitizedFilename;
     } catch (error) {
       console.error('Failed to upload ROM:', error);
@@ -98,9 +101,10 @@ class RomStorage {
 
     try {
       const chunks = [];
+      const objectName = this.prefix + filename;
 
       return new Promise((resolve, reject) => {
-        this.minioClient.getObject(this.bucketName, filename, (err, dataStream) => {
+        this.minioClient.getObject(this.bucketName, objectName, (err, dataStream) => {
           if (err) {
             return reject(err);
           }
@@ -136,7 +140,8 @@ class RomStorage {
     }
 
     try {
-      await this.minioClient.statObject(this.bucketName, filename);
+      const objectName = this.prefix + filename;
+      await this.minioClient.statObject(this.bucketName, objectName);
       return true;
     } catch (error) {
       if (error.code === 'NotFound') {
@@ -159,11 +164,16 @@ class RomStorage {
       const objectsList = [];
 
       return new Promise((resolve, reject) => {
-        const stream = this.minioClient.listObjects(this.bucketName, '', true);
+        // Only list objects with the roms/ prefix
+        const stream = this.minioClient.listObjects(this.bucketName, this.prefix, true);
 
         stream.on('data', (obj) => {
+          // Strip the prefix from the name for cleaner output
+          const name = obj.name.startsWith(this.prefix)
+            ? obj.name.substring(this.prefix.length)
+            : obj.name;
           objectsList.push({
-            name: obj.name,
+            name: name,
             size: obj.size,
             lastModified: obj.lastModified,
             etag: obj.etag
@@ -197,8 +207,9 @@ class RomStorage {
     }
 
     try {
-      await this.minioClient.removeObject(this.bucketName, filename);
-      console.log(`ROM deleted: ${filename}`);
+      const objectName = this.prefix + filename;
+      await this.minioClient.removeObject(this.bucketName, objectName);
+      console.log(`ROM deleted: ${objectName}`);
       return true;
     } catch (error) {
       console.error('Failed to delete ROM:', error);
