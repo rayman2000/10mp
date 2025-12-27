@@ -24,32 +24,39 @@ function App() {
     if (!kioskApproved || saveDataReady) return;
 
     const fetchSaveData = async () => {
+      const startTime = Date.now();
       try {
         console.log('Pre-fetching save data...');
         const latestSave = await saveApi.getLatestSave();
+        console.log('getLatestSave response:', latestSave);
 
         if (latestSave && latestSave.saveStateUrl) {
-          console.log(`Found save from turn ${latestSave.turnId}, downloading...`);
+          console.log(`Found save from turn ${latestSave.turnId}, downloading from: ${latestSave.saveStateUrl}`);
           const saveData = await saveApi.downloadSave(latestSave.saveStateUrl);
+          console.log('Downloaded save data:', saveData ? `${saveData.byteLength} bytes` : 'null');
 
           if (saveData) {
             // Convert to base64 for the emulator
             const base64 = btoa(
               new Uint8Array(saveData).reduce((data, byte) => data + String.fromCharCode(byte), '')
             );
-            console.log(`Save data pre-fetched: ${base64.length} chars`);
+            console.log(`✅ Save data pre-fetched: ${base64.length} chars in ${Date.now() - startTime}ms`);
             setPrefetchedSaveData(base64);
+          } else {
+            console.warn('Downloaded save data was empty');
           }
         } else {
           console.log('No previous save found - will start fresh');
         }
       } catch (error) {
         if (error.response?.status === 404) {
-          console.log('No previous save found - will start fresh');
+          console.log('No previous save found (404) - will start fresh');
         } else {
           console.error('Error pre-fetching save:', error);
+          console.error('Error details:', error.response?.data, error.response?.status);
         }
       } finally {
+        console.log(`Save data fetch complete in ${Date.now() - startTime}ms`);
         setSaveDataReady(true);
       }
     };
@@ -98,6 +105,7 @@ function App() {
         <div className="screen-overlay">
           <PlayerEntry
             previousMessage={previousMessage}
+            saveDataReady={saveDataReady}
             onStartGame={(playerName) => {
               setCurrentPlayer(playerName);
               setCurrentScreen('game');

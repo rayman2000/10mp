@@ -576,6 +576,7 @@ app.get('/api/saves', async (req, res) => {
 // GET /api/saves/latest - Get latest valid (non-invalidated) save
 app.get('/api/saves/latest', async (req, res) => {
   try {
+    console.log('Fetching latest save from database...');
     // Find the latest non-invalidated turn with a save state
     const latestTurn = await GameTurn.findOne({
       where: {
@@ -588,8 +589,11 @@ app.get('/api/saves/latest', async (req, res) => {
     });
 
     if (!latestTurn || !latestTurn.saveStateUrl) {
+      console.log('No valid saves found in database');
       return res.status(404).json({ error: 'No saves found' });
     }
+
+    console.log(`Latest save found: turn=${latestTurn.id}, saveStateUrl="${latestTurn.saveStateUrl}", player=${latestTurn.playerName}`);
 
     res.json({
       turnId: latestTurn.id,
@@ -609,6 +613,8 @@ app.get('/api/saves/latest', async (req, res) => {
 app.get('/api/saves/:objectKey/download', async (req, res) => {
   try {
     const { objectKey } = req.params;
+    // Express auto-decodes URL params, but log both for debugging
+    console.log(`Save download requested: "${objectKey}"`);
 
     // Initialize MinIO storage if needed
     if (!saveStateStorage.initialized) {
@@ -618,9 +624,11 @@ app.get('/api/saves/:objectKey/download', async (req, res) => {
     const saveData = await saveStateStorage.loadSpecificSave(objectKey);
 
     if (!saveData) {
+      console.log(`Save not found: "${objectKey}"`);
       return res.status(404).json({ error: 'Save not found' });
     }
 
+    console.log(`Serving save: "${objectKey}" (${saveData.length} bytes)`);
     // Send as downloadable file
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${objectKey}"`);

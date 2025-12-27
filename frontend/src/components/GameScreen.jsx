@@ -71,29 +71,50 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
   }, [player, turnStartTime, config, saveGame, scrapeData]);
 
   // Track if we've already loaded the save to prevent re-loading
-  const lastSaveLoadedRef = useRef(false);
+  const saveLoadAttemptedRef = useRef(false);
 
   // Load prefetched save data when emulator is ready
   useEffect(() => {
-    if (isLoaded && !lastSaveLoadedRef.current) {
-      lastSaveLoadedRef.current = true;
-      startGame();
+    if (!isLoaded || saveLoadAttemptedRef.current) return;
 
-      // Load the prefetched save data after a small delay
-      setTimeout(() => {
-        if (prefetchedSaveData) {
-          console.log('Loading prefetched save data...');
-          const loaded = loadGame(prefetchedSaveData);
-          if (loaded) {
-            console.log('✅ Prefetched save state loaded successfully!');
-          } else {
-            console.warn('Failed to load prefetched save state');
-          }
-        } else {
-          console.log('No prefetched save data - starting fresh game');
+    console.log('Emulator loaded, preparing to load save...', {
+      hasPrefetchedData: !!prefetchedSaveData,
+      dataLength: prefetchedSaveData?.length || 0
+    });
+
+    saveLoadAttemptedRef.current = true;
+    startGame();
+
+    // Load the prefetched save data after emulator is fully running
+    // Use multiple attempts with increasing delays for reliability
+    const attemptLoad = async () => {
+      if (!prefetchedSaveData) {
+        console.log('No prefetched save data - starting fresh game');
+        return;
+      }
+
+      console.log(`Attempting to load save data (${prefetchedSaveData.length} chars)...`);
+
+      // Try loading with increasing delays (emulator might need time to fully initialize)
+      const delays = [500, 1000, 2000];
+      for (let i = 0; i < delays.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, delays[i]));
+
+        console.log(`Load attempt ${i + 1}/${delays.length}...`);
+        const loaded = loadGame(prefetchedSaveData);
+
+        if (loaded) {
+          console.log(`✅ Save state loaded successfully on attempt ${i + 1}!`);
+          return;
         }
-      }, 500);
-    }
+
+        console.warn(`Load attempt ${i + 1} failed, ${i < delays.length - 1 ? 'retrying...' : 'giving up'}`);
+      }
+
+      console.error('❌ Failed to load save state after all attempts');
+    };
+
+    attemptLoad();
   }, [isLoaded, startGame, loadGame, prefetchedSaveData]);
 
   // Focus emulator when becoming active or when emulator becomes ready

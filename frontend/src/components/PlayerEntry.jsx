@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './PlayerEntry.css';
 
-const PlayerEntry = ({ previousMessage, onStartGame }) => {
+const PlayerEntry = ({ previousMessage, onStartGame, saveDataReady = true }) => {
   const [playerName, setPlayerName] = useState('');
   const inputRef = useRef(null);
 
@@ -15,15 +15,17 @@ const PlayerEntry = ({ previousMessage, onStartGame }) => {
     return () => clearTimeout(timer);
   }, []);
 
+  const canStart = playerName.trim() && saveDataReady;
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (playerName.trim()) {
+    if (canStart) {
       onStartGame(playerName.trim());
     }
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && playerName.trim()) {
+    if (e.key === 'Enter' && canStart) {
       onStartGame(playerName.trim());
     }
   };
@@ -52,7 +54,13 @@ const PlayerEntry = ({ previousMessage, onStartGame }) => {
             onKeyPress={handleKeyPress}
             maxLength={20}
             placeholder="Your name"
+            disabled={!saveDataReady}
           />
+          {!saveDataReady && (
+            <div className="save-loading-indicator">
+              Loading save data...
+            </div>
+          )}
         </div>
       </div>
     </div>

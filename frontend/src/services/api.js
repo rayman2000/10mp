@@ -89,12 +89,15 @@ export const saveApi = {
 
   async downloadSave(objectKey) {
     try {
-      const response = await api.get(`/api/saves/${objectKey}/download`, {
+      // URL-encode the objectKey to handle special characters like dots
+      const encodedKey = encodeURIComponent(objectKey);
+      console.log(`Downloading save: ${objectKey} (encoded: ${encodedKey})`);
+      const response = await api.get(`/api/saves/${encodedKey}/download`, {
         responseType: 'arraybuffer'
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to download save:', error);
+      console.error('Failed to download save:', error.response?.status, error.message);
       throw error;
     }
   },
