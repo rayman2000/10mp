@@ -68,7 +68,6 @@ class RomStorage {
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
 
       const metadata = {
-        'Content-Type': 'application/octet-stream',
         'x-amz-meta-original-filename': filename,
         'x-amz-meta-upload-timestamp': new Date().toISOString()
       };

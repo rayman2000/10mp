@@ -8,6 +8,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false); // Ref to avoid recreating saveTurnData callback
   const [turnStartTime] = useState(() => new Date());
+  const [timeRemaining, setTimeRemaining] = useState(null); // Time remaining in seconds
   const {
     isLoaded,
     isRunning,
@@ -216,6 +217,39 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
     };
   }, [isActive]); // Only depends on isActive!
 
+  // Update visible countdown timer every second
+  useEffect(() => {
+    if (!isActive || !config) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const turnDurationMs = (config.turnDurationMinutes || 3) * 60 * 1000;
+    const endTime = turnStartTime.getTime() + turnDurationMs;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
+      setTimeRemaining(remaining);
+    };
+
+    // Update immediately
+    updateTimer();
+
+    // Update every second
+    const intervalId = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isActive, config, turnStartTime]);
+
+  // Format time remaining as MM:SS
+  const formatTime = (seconds) => {
+    if (seconds === null) return '--:--';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (error) {
     return (
       <div className="game-screen-fullscreen">
@@ -249,6 +283,12 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
 
   return (
     <div className={`game-screen-fullscreen ${!isActive ? 'game-screen-inactive' : ''}`}>
+      {/* Timer display */}
+      {isActive && timeRemaining !== null && (
+        <div className={`game-timer ${timeRemaining <= 60 ? 'game-timer-warning' : ''}`}>
+          {formatTime(timeRemaining)}
+        </div>
+      )}
       <div className="emulator-wrapper">
         {!isLoaded && (
           <div className="loading-overlay">

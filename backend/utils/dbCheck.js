@@ -33,9 +33,7 @@ async function tableExists(tableName) {
  */
 async function checkRequiredTables() {
   const requiredTables = [
-    'game_turns',
-    'game_sessions',
-    'kiosk_registrations'
+    'game_turns'
   ];
 
   const missing = [];

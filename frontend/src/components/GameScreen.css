@@ -52,3 +52,38 @@
   object-fit: contain;
   background: #000;
 }
+
+/* Timer display in top corner */
+.game-timer {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10001;
+  font-family: monospace, 'Courier New', serif;
+  font-size: 24px;
+  font-weight: bold;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+/* Warning state when time is running low (1 minute or less) */
+.game-timer-warning {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.5);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
