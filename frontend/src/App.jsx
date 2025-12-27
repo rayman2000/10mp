@@ -39,6 +39,7 @@ function App() {
           approved={kioskApproved}
           onGameEnd={handleGameEnd}
           config={config}
+          previousMessage={previousMessage}
         />
       </ErrorBoundary>
       

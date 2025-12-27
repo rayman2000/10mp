@@ -74,6 +74,13 @@ export const useEmulator = (config = {}, approved = false) => {
     }
   }, []);
 
+  const resumeGame = useCallback(() => {
+    if (emulatorRef.current) {
+      emulatorRef.current.resumeGame();
+      setIsRunning(true);
+    }
+  }, []);
+
   const saveGame = useCallback(() => {
     if (emulatorRef.current) {
       return emulatorRef.current.saveState();
@@ -136,6 +143,7 @@ export const useEmulator = (config = {}, approved = false) => {
     error,
     startGame,
     pauseGame,
+    resumeGame,
     saveGame,
     loadGame,
     scrapeData,

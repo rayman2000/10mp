@@ -87,3 +87,34 @@
     opacity: 0.7;
   }
 }
+
+/* Message sidebar on left side */
+.game-message-sidebar {
+  position: fixed;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
+  z-index: 10001;
+  max-width: 250px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 16px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.game-message-header {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.game-message-content {
+  font-size: 16px;
+  color: #ffffff;
+  line-height: 1.4;
+  word-wrap: break-word;
+}

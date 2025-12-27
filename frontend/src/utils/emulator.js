@@ -112,8 +112,10 @@ class EmulatorManager {
       window.EJS_volume = 0; // Mute audio
       window.EJS_disableAudio = true; // Disable audio processing entirely
       window.EJS_threads = false; // Disable threading (can cause overhead on Pi)
+      window.EJS_WEBGL2 = true; // Enable WebGL2 for better performance
       window.EJS_defaultOptions = {
         'shader': 'disabled', // Disable shaders for better performance
+        'vsync': 'disabled', // Disable VSync for lower latency
       };
       
       // Debug callbacks with better error handling
@@ -286,8 +288,33 @@ class EmulatorManager {
   }
 
   pauseGame() {
-    // This would need to interface with EmulatorJS pause functionality
     console.log('Game pause requested');
+    try {
+      if (window.EJS_emulator?.pause) {
+        window.EJS_emulator.pause();
+        console.log('Emulator paused');
+      } else if (window.EJS_emulator?.gameManager?.pause) {
+        window.EJS_emulator.gameManager.pause();
+        console.log('Emulator paused via gameManager');
+      }
+    } catch (e) {
+      console.log('Pause failed:', e.message);
+    }
+  }
+
+  resumeGame() {
+    console.log('Game resume requested');
+    try {
+      if (window.EJS_emulator?.play) {
+        window.EJS_emulator.play();
+        console.log('Emulator resumed');
+      } else if (window.EJS_emulator?.gameManager?.play) {
+        window.EJS_emulator.gameManager.play();
+        console.log('Emulator resumed via gameManager');
+      }
+    } catch (e) {
+      console.log('Resume failed:', e.message);
+    }
   }
 
   saveState() {

@@ -3,17 +3,19 @@ import { useEmulator } from '../hooks/useEmulator';
 import { gameApi, saveApi } from '../services/api';
 import './GameScreen.css';
 
-const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, config }) => {
+const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, config, previousMessage }) => {
   const containerRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false); // Ref to avoid recreating saveTurnData callback
-  const [turnStartTime] = useState(() => new Date());
+  const [turnStartTime, setTurnStartTime] = useState(null); // Set when timer actually starts
   const [timeRemaining, setTimeRemaining] = useState(null); // Time remaining in seconds
   const {
     isLoaded,
     isRunning,
     error,
     startGame,
+    pauseGame,
+    resumeGame,
     saveGame,
     loadGame,
     scrapeData
@@ -34,7 +36,9 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
       console.log('Scraped game data:', gameData);
 
       const turnEndTime = new Date();
-      const turnDuration = Math.floor((turnEndTime - turnStartTime) / 1000); // Duration in seconds
+      const turnDuration = turnStartTime
+        ? Math.floor((turnEndTime - turnStartTime) / 1000)
+        : (config?.turnDurationMinutes || 3) * 60; // Fallback to configured duration
       const saveState = saveGame(); // Get current save state from emulator
 
       // Convert playtime object to total seconds (0 if not available)
@@ -66,7 +70,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
       isSavingRef.current = false;
       setIsSaving(false);
     }
-  }, [player, turnStartTime, saveGame, scrapeData]);
+  }, [player, turnStartTime, config, saveGame, scrapeData]);
 
   // Track if we've already loaded the last save to prevent re-loading
   const lastSaveLoadedRef = useRef(false);
@@ -129,20 +133,46 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
     }
   }, [isLoaded, startGame, loadLastSaveState]);
 
-  // Focus emulator when becoming active to ensure immediate input
+  // Pause/resume emulator based on active state to save CPU
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    if (isActive) {
+      console.log('Resuming emulator');
+      resumeGame();
+    } else {
+      console.log('Pausing emulator');
+      pauseGame();
+    }
+  }, [isActive, isLoaded, resumeGame, pauseGame]);
+
+  // Focus emulator when becoming active or when emulator becomes ready
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
-    const emulatorCanvas = containerRef.current.querySelector('canvas');
-    if (emulatorCanvas) {
-      // Small delay to ensure DOM is ready
-      const focusTimeout = setTimeout(() => {
+    const focusEmulator = () => {
+      const emulatorCanvas = containerRef.current?.querySelector('canvas');
+      if (emulatorCanvas) {
         emulatorCanvas.focus();
         emulatorCanvas.click();
-      }, 50);
-      return () => clearTimeout(focusTimeout);
-    }
-  }, [isActive]);
+        return true;
+      }
+      return false;
+    };
+
+    // Try focusing immediately, then retry a few times if canvas isn't ready
+    const focusTimeout = setTimeout(() => {
+      if (!focusEmulator()) {
+        // Retry with increasing delays
+        const retryDelays = [100, 250, 500, 1000];
+        retryDelays.forEach((delay, i) => {
+          setTimeout(() => focusEmulator(), delay);
+        });
+      }
+    }, 50);
+
+    return () => clearTimeout(focusTimeout);
+  }, [isActive, isRunning]);
 
   // Use refs to store callbacks and config so timer is independent of renders
   const saveTurnDataRef = useRef(saveTurnData);
@@ -176,6 +206,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
         timerRef.current = null;
       }
       timerStartedRef.current = false;
+      setTurnStartTime(null); // Reset for next turn
       return;
     }
 
@@ -193,7 +224,9 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
 
     timerStartedRef.current = true;
     const turnDurationMs = (currentConfig.turnDurationMinutes || 3) * 60000;
-    const endTime = new Date(Date.now() + turnDurationMs);
+    const now = new Date();
+    setTurnStartTime(now); // Sync display timer with actual timer
+    const endTime = new Date(now.getTime() + turnDurationMs);
     console.log(`✅ Timer STARTED: Turn will end in ${currentConfig.turnDurationMinutes || 3} minutes at ${endTime.toLocaleTimeString()}`);
 
     timerRef.current = setTimeout(async () => {
@@ -219,7 +252,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
 
   // Update visible countdown timer every second
   useEffect(() => {
-    if (!isActive || !config) {
+    if (!isActive || !config || !turnStartTime) {
       setTimeRemaining(null);
       return;
     }
@@ -287,6 +320,13 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
       {isActive && timeRemaining !== null && (
         <div className={`game-timer ${timeRemaining <= 60 ? 'game-timer-warning' : ''}`}>
           {formatTime(timeRemaining)}
+        </div>
+      )}
+      {/* Previous player message sidebar */}
+      {isActive && previousMessage && (
+        <div className="game-message-sidebar">
+          <div className="game-message-header">Message from previous player:</div>
+          <div className="game-message-content">{previousMessage}</div>
         </div>
       )}
       <div className="emulator-wrapper">
