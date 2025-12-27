@@ -31,8 +31,32 @@ const KioskConnect = ({ onConnect }) => {
   const [kioskId, setKioskId] = useState('');
   const [status, setStatus] = useState('generating'); // 'generating', 'registering', 'waiting', 'activated', 'error'
   const [error, setError] = useState('');
+  const [deviceIp, setDeviceIp] = useState('');
   const pollIntervalRef = useRef(null);
   const onConnectRef = useRef(onConnect);
+
+  // Fetch the device's local IP address from backend
+  useEffect(() => {
+    const fetchDeviceIp = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/system/ip`);
+        if (response.ok) {
+          const data = await response.json();
+          // Get the first non-internal IPv4 address
+          if (data.addresses && data.addresses.length > 0) {
+            const ips = data.addresses.map(a => a.address).join(', ');
+            setDeviceIp(ips);
+          } else {
+            setDeviceIp('No network');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch device IP:', err);
+        setDeviceIp('Unavailable');
+      }
+    };
+    fetchDeviceIp();
+  }, []);
 
   // Keep ref updated
   useEffect(() => {
@@ -180,6 +204,13 @@ const KioskConnect = ({ onConnect }) => {
               <span className="kiosk-id-label">Kiosk ID:</span>
               <span className="kiosk-id-value">{kioskId}</span>
             </div>
+
+            {deviceIp && (
+              <div className="kiosk-debug-info">
+                <span className="kiosk-debug-label">Device IP:</span>
+                <span className="kiosk-debug-value">{deviceIp}</span>
+              </div>
+            )}
           </div>
         )}
 

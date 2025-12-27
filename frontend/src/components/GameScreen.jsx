@@ -265,7 +265,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
   }
 
   return (
-    <div className={`game-screen-fullscreen ${!isActive ? 'game-screen-inactive' : ''}`}>
+    <div className="game-screen-fullscreen">
       {/* Timer display */}
       {isActive && timeRemaining !== null && (
         <div className={`game-timer ${timeRemaining <= 60 ? 'game-timer-warning' : ''}`}>

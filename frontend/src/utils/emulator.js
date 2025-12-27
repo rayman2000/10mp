@@ -108,14 +108,19 @@ class EmulatorManager {
       window.EJS_startOnLoaded = true; // Auto-start when loaded
       window.EJS_controls = false; // Hide start button
 
-      // Performance optimizations
+      // Performance optimizations for low-power devices (Raspberry Pi 4)
       window.EJS_volume = 0; // Mute audio
       window.EJS_disableAudio = true; // Disable audio processing entirely
       window.EJS_threads = true; // Enable multi-threaded emulation (uses Web Workers)
       window.EJS_WEBGL2 = true; // Enable WebGL2 for better performance
+      window.EJS_CacheLimit = 50 * 1024 * 1024; // Limit cache to 50MB (default is 1GB)
+      window.EJS_softLoad = true; // Soft loading - less memory intensive
       window.EJS_defaultOptions = {
         'shader': 'disabled', // Disable shaders for better performance
         'vsync': 'disabled', // Disable VSync for lower latency
+        'rewind': false, // Disable rewind to save memory and CPU
+        'ffw-ratio': 1, // Disable fast forward (1x speed)
+        'ff-ratio': 1, // Disable fast forward (1x speed)
       };
       
       // Debug callbacks with better error handling

@@ -130,6 +130,32 @@
   font-size: 13px;
 }
 
+.kiosk-debug-info {
+  margin-top: 15px;
+  padding: 12px;
+  background: #fff3e0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #666;
+  border: 1px dashed #ffb74d;
+}
+
+.kiosk-debug-label {
+  font-weight: 600;
+  margin-right: 10px;
+  color: #e65100;
+}
+
+.kiosk-debug-value {
+  font-family: 'Courier New', monospace;
+  color: #333;
+  background: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  user-select: all;
+}
+
 .kiosk-success {
   font-size: 80px;
   color: #4caf50;
