@@ -89,20 +89,22 @@ function App() {
 
   return (
     <div className="App">
-      {/* Only render GameScreen when game is active - emulator starts when player enters name */}
-      {currentScreen === 'game' && (
-        <ErrorBoundary onReset={() => setCurrentScreen('entry')}>
-          <GameScreen
-            player={currentPlayer}
-            isActive={true}
-            approved={true}
-            onGameEnd={handleGameEnd}
-            onTurnDataCaptured={setPendingTurnData}
-            config={config}
-            previousMessage={previousMessage}
-            prefetchedSaveData={prefetchedSaveData}
-          />
-        </ErrorBoundary>
+      {/* Keep GameScreen mounted once approved to preserve emulator state between turns */}
+      {kioskApproved && (
+        <div style={{ display: currentScreen === 'game' ? 'block' : 'none' }}>
+          <ErrorBoundary onReset={() => setCurrentScreen('entry')}>
+            <GameScreen
+              player={currentPlayer}
+              isActive={currentScreen === 'game'}
+              approved={true}
+              onGameEnd={handleGameEnd}
+              onTurnDataCaptured={setPendingTurnData}
+              config={config}
+              previousMessage={previousMessage}
+              prefetchedSaveData={prefetchedSaveData}
+            />
+          </ErrorBoundary>
+        </div>
       )}
       
       {/* Overlay screens when not in game mode */}
@@ -148,6 +150,10 @@ function App() {
             pendingTurnData={pendingTurnData}
             onMessageSubmit={(message) => {
               setPreviousMessage(message);
+              // Pass the captured save state to the next turn
+              if (pendingTurnData?.saveState) {
+                setPrefetchedSaveData(pendingTurnData.saveState);
+              }
               setPendingTurnData(null); // Clear after submission
               setCurrentScreen('entry');
             }}

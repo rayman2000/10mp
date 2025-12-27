@@ -32,43 +32,6 @@ class EmulatorManager {
     console.log('Auto-save callback registered');
   }
 
-  clearPreviousInstance() {
-    console.log('Clearing previous EmulatorJS instance...');
-
-    // Clear the container first
-    const container = document.getElementById('emulator-container');
-    if (container) {
-      container.innerHTML = '';
-    }
-
-    // Clear all EmulatorJS global variables and callbacks
-    const ejsGlobals = [
-      'EJS_player',
-      'EJS_core',
-      'EJS_gameUrl',
-      'EJS_pathtodata',
-      'EJS_volume',
-      'EJS_color',
-      'EJS_backgroundColor',
-      'EJS_startOnLoaded',
-      'EJS_controls',
-      'EJS_onLoaded',
-      'EJS_onGameStart',
-      'EJS_onError',
-      'EJS_emulator',
-      'EJS_gameManager'
-    ];
-
-    ejsGlobals.forEach(key => {
-      if (window[key] !== undefined) {
-        delete window[key];
-      }
-    });
-
-    // Reset flags
-    this.isRunning = false;
-  }
-
   async initialize() {
     try {
       console.log('Starting EmulatorJS initialization...');
@@ -83,12 +46,6 @@ class EmulatorManager {
       }
 
       console.log('Container found:', container);
-      
-      // Clear any existing EmulatorJS instances/globals first
-      this.clearPreviousInstance();
-      
-      // Ensure container is properly set up
-      container.innerHTML = '';
       container.style.display = 'block';
       container.style.width = '100%';
       container.style.height = '100%';
@@ -1792,24 +1749,6 @@ class EmulatorManager {
     console.log('Destroying emulator instance...');
     this.stopAutoSave();
     this.isRunning = false;
-    
-    // Clear the container more safely
-    const container = document.getElementById('emulator-container');
-    if (container) {
-      try {
-        container.innerHTML = '';
-      } catch (e) {
-        console.log('Error clearing container:', e);
-      }
-    }
-    
-    // Clear callbacks but keep config
-    if (window.EJS_onLoaded) delete window.EJS_onLoaded;
-    if (window.EJS_onGameStart) delete window.EJS_onGameStart;
-    if (window.EJS_onError) delete window.EJS_onError;
-    
-    // Reset internal state
-    this.scriptLoaded = false;
   }
 }
 

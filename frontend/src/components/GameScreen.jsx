@@ -72,14 +72,15 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     }
   }, [player, turnStartTime, config, saveGame, scrapeData, onTurnDataCaptured]);
 
-  // Track if we've already loaded the save to prevent re-loading
+  // Track if we've already loaded the save to prevent re-loading during this turn
   const saveLoadAttemptedRef = useRef(false);
 
-  // Load prefetched save data when emulator is ready
+  // Load prefetched save data when emulator is ready or when becoming active for new turn
   useEffect(() => {
-    if (!isLoaded || saveLoadAttemptedRef.current) return;
+    // Need emulator loaded, turn to be active, and not already attempted this turn
+    if (!isLoaded || !isActive || saveLoadAttemptedRef.current) return;
 
-    console.log('Emulator loaded, preparing to load save...', {
+    console.log('Loading save for turn...', {
       hasPrefetchedData: !!prefetchedSaveData,
       dataLength: prefetchedSaveData?.length || 0
     });
@@ -117,7 +118,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     };
 
     attemptLoad();
-  }, [isLoaded, startGame, loadGame, prefetchedSaveData]);
+  }, [isLoaded, isActive, startGame, loadGame, prefetchedSaveData]);
 
   // Focus emulator when becoming active or when emulator becomes ready
   useEffect(() => {
@@ -172,13 +173,14 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     console.log('Timer effect running:', { isActive, timerStarted: timerStartedRef.current });
 
     if (!isActive) {
-      // When becoming inactive, clear timer and reset
+      // When becoming inactive, clear timer and reset for next turn
       if (timerRef.current) {
         console.log('Clearing timer - no longer active');
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
       timerStartedRef.current = false;
+      saveLoadAttemptedRef.current = false; // Reset so next turn can load new save
       setTurnStartTime(null); // Reset for next turn
       return;
     }

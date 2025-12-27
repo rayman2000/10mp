@@ -45,18 +45,10 @@ export const useEmulator = (config = {}, approved = false) => {
 
     return () => {
       mounted = false;
+      // Emulator stays alive - cleanup only stops auto-save
       if (emulatorRef.current) {
-        try {
-          emulatorRef.current.destroy();
-        } catch (e) {
-          console.log('Error during emulator cleanup:', e);
-        }
-        emulatorRef.current = null;
+        emulatorRef.current.destroy();
       }
-      // Reset states on unmount
-      setIsLoaded(false);
-      setIsRunning(false);
-      setError(null);
     };
   }, [approved]);
 
