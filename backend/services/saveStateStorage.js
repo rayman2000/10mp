@@ -14,7 +14,7 @@ class SaveStateStorage {
     try {
       const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
       const port = parseInt(process.env.MINIO_PORT) || 9000;
-      const useSSL = process.env.MINIO_USE_SSL === 'true';
+      const useSSL = process.env.MINIO_USE_SSL !== 'false';
       const accessKey = process.env.MINIO_ACCESS_KEY || 'minioadmin';
       const secretKey = process.env.MINIO_SECRET_KEY || 'minioadmin';
 

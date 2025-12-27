@@ -745,8 +745,6 @@ const startServer = async () => {
 
     app.listen(PORT, () => {
       console.log(`10MP Backend server running on port ${PORT}`);
-      console.log(`API: http://localhost:${PORT}/api/game-turns`);
-      console.log(`Admin console: http://localhost:3002 (separate application)`);
     });
   } catch (error) {
     console.error('Unable to start server:', error);
