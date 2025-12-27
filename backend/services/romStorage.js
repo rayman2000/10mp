@@ -67,23 +67,31 @@ class RomStorage {
 
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
 
-      const metadata = {
-        'x-amz-meta-original-filename': filename,
-        'x-amz-meta-upload-timestamp': new Date().toISOString()
-      };
+      console.log('Uploading ROM:', {
+        bucket: this.bucketName,
+        objectName,
+        bufferLength: buffer.length
+      });
 
+      // Simple upload without metadata to avoid S3 compatibility issues
       await this.minioClient.putObject(
         this.bucketName,
         objectName,
         buffer,
-        buffer.length,
-        metadata
+        buffer.length
       );
 
       console.log(`ROM uploaded: ${objectName} (${buffer.length} bytes)`);
       return sanitizedFilename;
     } catch (error) {
       console.error('Failed to upload ROM:', error);
+      console.error('S3 Error details:', {
+        code: error.code,
+        message: error.message,
+        key: error.key,
+        resource: error.resource,
+        requestId: error.requestId
+      });
       throw error;
     }
   }
