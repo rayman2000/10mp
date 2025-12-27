@@ -14,18 +14,17 @@ A collaborative Pokemon Fire Red experience where players take turns playing for
 
 ```
 [Raspberry Pi Kiosk]          [Docker Container]              [Admin Console]
-   - Browser (kiosk)    <-->    - nginx (reverse proxy)  <-->  - Admin web app
-   - ROM files                  - Express API (Node.js)        - Kiosk activation
-   - EmulatorJS                 - PostgreSQL (metadata)        - Save management
-                                - MinIO (save files)
+   - Browser (kiosk)    <-->    - Express (Node.js)      <-->  - Admin web app
+   - ROM files                  - PostgreSQL (metadata)        - Kiosk activation
+   - EmulatorJS                 - MinIO (save files)           - Save management
 ```
 
-### Subdomain Routing
+### URL Routing
 
-The Docker container uses nginx for subdomain-based routing:
-- `yourdomain.com` → Kiosk frontend
-- `admin.yourdomain.com` → Admin console
-- `/api/*` → Backend API (proxied)
+Express serves everything directly:
+- `yourdomain.com/` → Kiosk frontend
+- `yourdomain.com/admin` → Admin console
+- `yourdomain.com/api/*` → Backend API
 
 ## Quick Start
 
@@ -61,25 +60,17 @@ npm run docker:up
 npm run docker:logs
 ```
 
-### 4. Setup Local Hosts (for development)
-
-Add to `/etc/hosts`:
-```
-127.0.0.1 localhost
-127.0.0.1 admin.localhost
-```
-
-### 5. Access Services
+### 4. Access Services
 
 - Kiosk: `http://localhost`
-- Admin: `http://admin.localhost`
+- Admin: `http://localhost/admin`
 - Health check: `http://localhost/health`
 
-### 6. Activate Kiosk
+### 5. Activate Kiosk
 
 1. Open kiosk (`http://localhost`)
 2. Kiosk displays a 16-character token
-3. Open admin (`http://admin.localhost`)
+3. Open admin (`http://localhost/admin`)
 4. Login with your admin password
 5. Find the kiosk in "Pending Kiosks"
 6. Click "Activate"
@@ -104,10 +95,6 @@ MINIO_USE_SSL=false
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=your-secure-password
 MINIO_BUCKET=game-saves
-
-# CORS (set to your domains)
-CORS_ORIGIN=https://yourdomain.com
-CORS_ORIGIN_ADMIN=https://admin.yourdomain.com
 
 # Admin
 ADMIN_PASSWORD=your-admin-password
@@ -145,9 +132,6 @@ npm run install:all    # Install all dependencies locally
 │   ├── models/           # Sequelize models
 │   ├── migrations/       # Database migrations
 │   └── services/         # Business logic
-├── docker/                # Docker configuration
-│   ├── nginx.conf        # Subdomain routing
-│   └── supervisord.conf  # Process management
 ├── Dockerfile             # Multi-stage production build
 ├── docker-compose.yml     # App + PostgreSQL + MinIO
 └── .env                   # Environment configuration

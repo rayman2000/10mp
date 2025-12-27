@@ -1,6 +1,6 @@
 # Multi-stage Production Dockerfile for 10 Minute Pokemon
 # Builds both React frontends and Node.js backend into a single container
-# Uses nginx for static files and reverse proxy, supervisord for process management
+# Express serves static files directly - no nginx needed
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Kiosk Frontend
@@ -21,7 +21,7 @@ RUN npm ci --workspace=frontend
 # Copy frontend source code
 COPY frontend/ frontend/
 
-# Set production API URL - uses relative path since nginx will proxy
+# Set production API URL - uses relative path since Express serves everything
 ENV VITE_API_URL=""
 
 # Build the React app
@@ -46,7 +46,7 @@ RUN npm ci --workspace=admin
 # Copy admin source code
 COPY admin/ admin/
 
-# Set production API URL - uses relative path since nginx will proxy
+# Set production API URL - uses relative path since Express serves everything
 ENV VITE_API_URL=""
 
 # Build the React app
@@ -76,42 +76,33 @@ COPY backend/ backend/
 # -----------------------------------------------------------------------------
 FROM node:20-alpine AS production
 
-# Install nginx, supervisord, and curl for health checks
-RUN apk add --no-cache \
-    nginx \
-    supervisor \
-    curl
+# Install curl for health checks
+RUN apk add --no-cache curl
 
 # Create necessary directories
-RUN mkdir -p /var/log/supervisor \
-    /var/run/nginx \
-    /run/nginx \
-    /var/cache/nginx \
-    /app/frontend \
-    /app/admin \
-    /app/backend
+RUN mkdir -p /app/frontend/build /app/admin/build /app/backend
 
 # Copy built frontend assets
-COPY --from=frontend-builder /build/frontend/build /app/frontend
-COPY --from=admin-builder /build/admin/build /app/admin
+COPY --from=frontend-builder /build/frontend/build /app/frontend/build
+COPY --from=admin-builder /build/admin/build /app/admin/build
 
 # Copy backend application
 COPY --from=backend-builder /build/backend /app/backend
 COPY --from=backend-builder /build/node_modules /app/node_modules
 
-# Copy configuration files
-COPY docker/nginx.conf /etc/nginx/nginx.conf
-COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
 # Set working directory
 WORKDIR /app
 
-# Expose port 80 (nginx)
-EXPOSE 80
+# Set environment
+ENV NODE_ENV=production
+ENV PORT=3001
 
-# Health check via nginx
+# Expose port 3001 (Express)
+EXPOSE 3001
+
+# Health check via Express
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
+    CMD curl -f http://localhost:3001/health || exit 1
 
-# Start supervisord which manages both nginx and node
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Start Node.js directly
+CMD ["node", "backend/index.js"]

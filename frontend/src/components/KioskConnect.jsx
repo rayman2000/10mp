@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './KioskConnect.css';
 
-// Use empty string for relative URLs in production (nginx proxies /api to backend)
+// Use empty string for relative URLs in production (Express serves everything)
 const API_BASE_URL = import.meta.env.VITE_API_URL !== undefined
   ? import.meta.env.VITE_API_URL
   : 'http://localhost:3001';

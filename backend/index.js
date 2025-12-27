@@ -14,6 +14,7 @@ console.log('Starting 10MP backend...');
 
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 console.log('Loading models...');
 const { sequelize } = require('./models');
 const GameTurn = require('./models').GameTurn;
@@ -718,6 +719,28 @@ app.get('/api/stats', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch statistics' });
   }
 });
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Production static file serving (when built frontends are available)
+if (process.env.NODE_ENV === 'production') {
+  // Serve admin app at /admin
+  const adminPath = path.join(__dirname, '../admin/build');
+  app.use('/admin', express.static(adminPath));
+  app.get('/admin/{*splat}', (req, res) => {
+    res.sendFile(path.join(adminPath, 'index.html'));
+  });
+
+  // Serve frontend app at root (must be last)
+  const frontendPath = path.join(__dirname, '../frontend/build');
+  app.use(express.static(frontendPath));
+  app.get('{*splat}', (req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+}
 
 const startServer = async () => {
   try {

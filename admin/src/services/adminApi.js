@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-// Use empty string for relative URLs in production (nginx proxies /api to backend)
+// Use empty string for relative URLs in production (Express serves everything)
 // Fall back to localhost:3001 only if env var is not set at all
 const API_BASE_URL = import.meta.env.VITE_API_URL !== undefined
   ? import.meta.env.VITE_API_URL
