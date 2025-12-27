@@ -97,7 +97,9 @@ class EmulatorManager {
       console.log('Setting up EmulatorJS configuration...');
       window.EJS_player = '#emulator-container';
       window.EJS_core = 'gba';
-      window.EJS_gameUrl = import.meta.env.VITE_ROM_PATH || '/emulator/pokemon-firered.gba';
+      // ROM is served from MinIO via the API in production
+      // Use VITE_ROM_PATH for local development with static files
+      window.EJS_gameUrl = import.meta.env.VITE_ROM_PATH || '/api/rom/pokemon-firered.gba';
       window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
       
       // Optional configurations - disable controls to auto-start

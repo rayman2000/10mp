@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { gameApi, authApi, kioskApi, setAdminToken, clearAdminToken } from '../services/adminApi';
+import React, { useState, useEffect, useRef } from 'react';
+import { gameApi, authApi, kioskApi, romApi, setAdminToken, clearAdminToken } from '../services/adminApi';
 import './AdminPanel.css';
 
 const PAGE_SIZE = 20;
@@ -21,16 +21,22 @@ const AdminPanel = () => {
   const [message, setMessage] = useState('');
   const [selectedTurn, setSelectedTurn] = useState(null);
 
-  // Fetch stats, game turns, and pending kiosks
+  // ROM management state
+  const [roms, setRoms] = useState([]);
+  const [uploadingRom, setUploadingRom] = useState(false);
+  const romFileInputRef = useRef(null);
+
+  // Fetch stats, game turns, pending kiosks, and ROMs
   const fetchData = async () => {
     try {
       setLoading(true);
       setTurnsPage(0);
 
-      const [statsData, kiosksData, turnsData] = await Promise.all([
+      const [statsData, kiosksData, turnsData, romsData] = await Promise.all([
         gameApi.getStats(),
         kioskApi.getPendingKiosks('all'),
-        gameApi.getGameTurns({ limit: PAGE_SIZE, offset: 0 })
+        gameApi.getGameTurns({ limit: PAGE_SIZE, offset: 0 }),
+        romApi.listRoms().catch(() => ({ roms: [] }))
       ]);
 
       setStats(statsData);
@@ -38,6 +44,7 @@ const AdminPanel = () => {
       setGameTurns(turnsData.data || []);
       setTurnsTotal(turnsData.pagination?.total || 0);
       setTurnsHasMore(turnsData.pagination?.hasMore || false);
+      setRoms(romsData.roms || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       setMessage(`Error loading data: ${error.response?.data?.error || error.message}`);
@@ -183,6 +190,56 @@ const AdminPanel = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle ROM file upload
+  const handleRomUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingRom(true);
+      setMessage(`Uploading ROM: ${file.name}...`);
+
+      const result = await romApi.uploadRom(file);
+      setMessage(`ROM uploaded successfully: ${result.filename} (${formatFileSize(result.size)})`);
+      await fetchData();
+    } catch (error) {
+      setMessage(`Error uploading ROM: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setUploadingRom(false);
+      // Reset file input
+      if (romFileInputRef.current) {
+        romFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle ROM deletion
+  const handleDeleteRom = async (filename) => {
+    if (!window.confirm(`Delete ROM: ${filename}?\n\nThis cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMessage(`Deleting ROM: ${filename}...`);
+
+      await romApi.deleteRom(filename);
+      setMessage(`ROM deleted: ${filename}`);
+      await fetchData();
+    } catch (error) {
+      setMessage(`Error deleting ROM: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Format file size
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   // Format timestamp
@@ -494,6 +551,53 @@ const AdminPanel = () => {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* ROM Management */}
+        <div className="admin-card">
+          <h2>ROM Management</h2>
+          <div className="rom-upload-section">
+            <input
+              type="file"
+              ref={romFileInputRef}
+              onChange={handleRomUpload}
+              accept=".gba,.gbc,.gb,.nes,.sfc,.smc,.bin"
+              style={{ display: 'none' }}
+              disabled={uploadingRom}
+            />
+            <button
+              onClick={() => romFileInputRef.current?.click()}
+              className="admin-button"
+              disabled={uploadingRom || loading}
+            >
+              {uploadingRom ? 'Uploading...' : 'Upload ROM'}
+            </button>
+            <p className="rom-upload-hint">Supported: .gba, .gbc, .gb, .nes, .sfc, .smc, .bin</p>
+          </div>
+          {roms.length > 0 ? (
+            <div className="rom-list">
+              {roms.map((rom) => (
+                <div key={rom.name} className="rom-item">
+                  <div className="rom-info">
+                    <div className="rom-name">{rom.name}</div>
+                    <div className="rom-details">
+                      {formatFileSize(rom.size)} | Last modified: {formatDate(rom.lastModified)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteRom(rom.name)}
+                    className="admin-button-danger admin-button-small"
+                    disabled={loading}
+                    title="Delete ROM"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="no-roms">No ROMs uploaded yet. Upload a ROM to get started.</p>
           )}
         </div>
 

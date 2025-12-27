@@ -15,8 +15,9 @@ A collaborative Pokemon Fire Red experience where players take turns playing for
 ```
 [Raspberry Pi Kiosk]          [Docker Container]              [Admin Console]
    - Browser (kiosk)    <-->    - Express (Node.js)      <-->  - Admin web app
-   - ROM files                  - PostgreSQL (metadata)        - Kiosk activation
-   - EmulatorJS                 - MinIO (save files)           - Save management
+   - EmulatorJS                 - PostgreSQL (metadata)        - Kiosk activation
+                                - MinIO (saves + ROMs)         - ROM upload
+                                                               - Save management
 ```
 
 ### URL Routing
@@ -34,15 +35,11 @@ Express serves everything directly:
 - Pokemon Fire Red ROM (legally obtained)
 - GBA BIOS (optional but recommended)
 
-### 1. Clone and Setup ROM
+### 1. Clone Repository
 
 ```bash
 git clone <repository-url>
 cd 10mp
-
-# Place ROM files in frontend/public/emulator/
-# - pokemon-firered.gba (required)
-# - gba_bios.bin (optional)
 ```
 
 ### 2. Configure Environment
@@ -66,7 +63,15 @@ npm run docker:logs
 - Admin: `http://localhost/admin`
 - Health check: `http://localhost/health`
 
-### 5. Activate Kiosk
+### 5. Upload ROM
+
+1. Open admin (`http://localhost/admin`)
+2. Login with your admin password
+3. In the "ROM Management" section, click "Upload ROM"
+4. Select your Pokemon Fire Red ROM file (`pokemon-firered.gba`)
+5. ROM is stored in MinIO and served to all kiosks
+
+### 6. Activate Kiosk
 
 1. Open kiosk (`http://localhost`)
 2. Kiosk displays a 16-character token
@@ -122,8 +127,7 @@ npm run install:all    # Install all dependencies locally
 │   │   ├── hooks/        # Custom hooks (useEmulator)
 │   │   ├── services/     # API client
 │   │   └── utils/        # EmulatorManager
-│   └── public/
-│       └── emulator/     # ROM files (not included)
+│   └── public/           # Static assets
 ├── admin/                 # Admin console
 │   └── src/
 │       ├── components/   # Admin dashboard
@@ -131,7 +135,7 @@ npm run install:all    # Install all dependencies locally
 ├── backend/               # Node.js/Express API
 │   ├── models/           # Sequelize models
 │   ├── migrations/       # Database migrations
-│   └── services/         # Business logic
+│   └── services/         # MinIO storage (saves, ROMs)
 ├── Dockerfile             # Multi-stage production build
 ├── docker-compose.yml     # App + PostgreSQL + MinIO
 └── .env                   # Environment configuration

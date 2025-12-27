@@ -17,11 +17,45 @@
   background: #f7fafc;
   border: 4px solid #2d3748;
   border-radius: 8px;
-  box-shadow: 
+  box-shadow:
     inset 2px 2px 0px #ffffff,
     inset -2px -2px 0px #a0aec0,
     4px 4px 8px rgba(0, 0, 0, 0.3);
   color: #1a202c;
+}
+
+.game-header {
+  padding: 24px 24px 20px;
+  background: linear-gradient(180deg, #9b4b4b 0%, #7a3a3a 100%);
+  border-bottom: 3px solid #5c2c2c;
+  position: relative;
+}
+
+.game-header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #d4a574, #c49464, #d4a574);
+}
+
+.game-header h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #f5e6d3;
+  text-shadow: 2px 2px 0px #5c2c2c;
+}
+
+.game-header .tagline {
+  margin: 0;
+  font-size: 14px;
+  color: #fef9c3;
+  font-weight: normal;
+  line-height: 1.4;
 }
 
 .previous-message {

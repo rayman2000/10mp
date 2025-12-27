@@ -678,3 +678,62 @@
     flex-direction: column;
   }
 }
+
+/* ROM Management */
+.rom-upload-section {
+  margin-bottom: 20px;
+}
+
+.rom-upload-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #888;
+}
+
+.rom-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.rom-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  transition: all 0.2s;
+}
+
+.rom-item:hover {
+  border-color: #667eea;
+  background: #f8f9ff;
+}
+
+.rom-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rom-name {
+  font-weight: 600;
+  color: #333;
+  font-family: 'Courier New', monospace;
+  word-break: break-all;
+}
+
+.rom-details {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.no-roms {
+  text-align: center;
+  color: #888;
+  padding: 30px 20px;
+  font-style: italic;
+  background: #f8f9fa;
+  border-radius: 8px;
+}

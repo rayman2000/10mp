@@ -178,4 +178,55 @@ export const kioskApi = {
   }
 };
 
+// ROM Management API
+export const romApi = {
+  async listRoms() {
+    try {
+      const response = await api.get('/api/admin/roms');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to list ROMs:', error);
+      throw error;
+    }
+  },
+
+  async uploadRom(file) {
+    try {
+      // Read file as base64
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          // Remove data URL prefix to get just the base64 data
+          const base64 = reader.result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Use longer timeout for ROM uploads (60 seconds)
+      const response = await api.post('/api/admin/upload-rom', {
+        filename: file.name,
+        data: base64Data
+      }, {
+        timeout: 60000
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to upload ROM:', error);
+      throw error;
+    }
+  },
+
+  async deleteRom(filename) {
+    try {
+      const response = await api.delete(`/api/admin/roms/${encodeURIComponent(filename)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to delete ROM:', error);
+      throw error;
+    }
+  }
+};
+
 export default api;

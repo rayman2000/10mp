@@ -20,6 +20,11 @@ const PlayerEntry = ({ previousMessage, onStartGame }) => {
   return (
     <div className="player-entry">
       <div className="entry-container">
+        <div className="game-header">
+          <h1>10 Minute Pokemon</h1>
+          <p className="tagline">Join our collaborative pokemon adventure and win a fancy badge!</p>
+        </div>
+
         <div className="previous-message">
           <h2>Message from the previous player:</h2>
           <p>"{previousMessage}"</p>

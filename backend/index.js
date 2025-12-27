@@ -20,6 +20,7 @@ const { sequelize } = require('./models');
 const GameTurn = require('./models').GameTurn;
 const { isValidKioskToken } = require('./utils/kioskToken');
 const saveStateStorage = require('./services/saveStateStorage');
+const romStorage = require('./services/romStorage');
 const { initializeDatabase } = require('./utils/dbCheck');
 console.log('All modules loaded successfully');
 
@@ -32,7 +33,8 @@ const kioskStore = {
   active: null         // {token, kioskId, kioskName, activatedAt} or null
 };
 
-app.use(express.json({ limit: '10mb' }));
+// Increase limit to 50MB for ROM uploads (GBA ROMs are typically 16-32MB)
+app.use(express.json({ limit: '50mb' }));
 
 // Basic request validation middleware
 const validateGameTurn = (req, res, next) => {
@@ -405,6 +407,131 @@ app.post('/api/admin/restore-turn', requireAdminAuth, async (req, res) => {
   }
 });
 
+// ROM Management Endpoints
+
+// GET /api/rom/:filename - Serve ROM file (public, for emulator)
+app.get('/api/rom/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+
+    // Validate filename (prevent path traversal)
+    if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    // Initialize ROM storage if needed
+    if (!romStorage.initialized) {
+      await romStorage.initialize();
+    }
+
+    // Check if ROM exists
+    const exists = await romStorage.romExists(filename);
+    if (!exists) {
+      return res.status(404).json({ error: 'ROM not found' });
+    }
+
+    // Get ROM data
+    const romData = await romStorage.getRom(filename);
+
+    // Send with appropriate headers for binary file
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', romData.length);
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+    res.send(romData);
+  } catch (error) {
+    console.error('Error serving ROM:', error);
+    res.status(500).json({ error: 'Failed to serve ROM' });
+  }
+});
+
+// GET /api/admin/roms - List all ROMs (admin only)
+app.get('/api/admin/roms', requireAdminAuth, async (req, res) => {
+  try {
+    // Initialize ROM storage if needed
+    if (!romStorage.initialized) {
+      await romStorage.initialize();
+    }
+
+    const roms = await romStorage.listRoms();
+    res.json({ roms });
+  } catch (error) {
+    console.error('Error listing ROMs:', error);
+    res.status(500).json({ error: 'Failed to list ROMs' });
+  }
+});
+
+// POST /api/admin/upload-rom - Upload ROM file (admin only)
+app.post('/api/admin/upload-rom', requireAdminAuth, async (req, res) => {
+  try {
+    const { filename, data } = req.body;
+
+    if (!filename || !data) {
+      return res.status(400).json({ error: 'filename and data are required' });
+    }
+
+    // Validate file extension
+    const validExtensions = ['.gba', '.gbc', '.gb', '.nes', '.sfc', '.smc', '.bin'];
+    const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+    if (!validExtensions.includes(ext)) {
+      return res.status(400).json({
+        error: 'Invalid file type',
+        message: `Allowed extensions: ${validExtensions.join(', ')}`
+      });
+    }
+
+    // Initialize ROM storage if needed
+    if (!romStorage.initialized) {
+      const initialized = await romStorage.initialize();
+      if (!initialized) {
+        return res.status(500).json({ error: 'Failed to initialize ROM storage' });
+      }
+    }
+
+    // Decode base64 data and upload
+    const buffer = Buffer.from(data, 'base64');
+    const savedFilename = await romStorage.uploadRom(filename, buffer);
+
+    res.json({
+      success: true,
+      filename: savedFilename,
+      size: buffer.length,
+      message: 'ROM uploaded successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading ROM:', error);
+    res.status(500).json({ error: 'Failed to upload ROM' });
+  }
+});
+
+// DELETE /api/admin/roms/:filename - Delete ROM file (admin only)
+app.delete('/api/admin/roms/:filename', requireAdminAuth, async (req, res) => {
+  try {
+    const { filename } = req.params;
+
+    // Validate filename
+    if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    // Initialize ROM storage if needed
+    if (!romStorage.initialized) {
+      await romStorage.initialize();
+    }
+
+    // Check if ROM exists
+    const exists = await romStorage.romExists(filename);
+    if (!exists) {
+      return res.status(404).json({ error: 'ROM not found' });
+    }
+
+    await romStorage.deleteRom(filename);
+    res.json({ success: true, message: 'ROM deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting ROM:', error);
+    res.status(500).json({ error: 'Failed to delete ROM' });
+  }
+});
+
 // Save State Endpoints
 
 // GET /api/saves - List all saves
@@ -757,13 +884,27 @@ const startServer = async () => {
       console.log('Database migrations completed automatically.');
     }
 
-    // Initialize MinIO storage
+    // Initialize MinIO storage for save states
     console.log('Initializing MinIO storage...');
     const minioInitialized = await saveStateStorage.initialize();
     if (minioInitialized) {
-      console.log('MinIO storage initialized successfully.');
+      console.log('MinIO save state storage initialized successfully.');
     } else {
-      console.warn('MinIO storage initialization failed. Save states will not work.');
+      console.warn('MinIO save state storage initialization failed. Save states will not work.');
+    }
+
+    // Initialize ROM storage
+    console.log('Initializing ROM storage...');
+    const romInitialized = await romStorage.initialize();
+    if (romInitialized) {
+      console.log('ROM storage initialized successfully.');
+    } else {
+      console.warn('ROM storage initialization failed. ROM serving will not work.');
+    }
+
+    // Warn if using default admin password
+    if (!process.env.ADMIN_PASSWORD) {
+      console.warn('WARNING: No ADMIN_PASSWORD set in environment. Using default password. Please set ADMIN_PASSWORD for production use.');
     }
 
     app.listen(PORT, () => {
