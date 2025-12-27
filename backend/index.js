@@ -1,11 +1,26 @@
+// Catch uncaught errors early
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION at:', promise);
+  console.error('Reason:', reason);
+});
+
+console.log('Starting 10MP backend...');
+
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
+console.log('Loading models...');
 const { sequelize } = require('./models');
 const GameTurn = require('./models').GameTurn;
 const { isValidKioskToken } = require('./utils/kioskToken');
 const saveStateStorage = require('./services/saveStateStorage');
 const { initializeDatabase } = require('./utils/dbCheck');
+console.log('All modules loaded successfully');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -16,26 +31,6 @@ const kioskStore = {
   active: null         // {token, kioskId, kioskName, activatedAt} or null
 };
 
-// Configure CORS with multiple origins (frontend + admin)
-const allowedOrigins = [
-  process.env.CORS_ORIGIN || 'http://localhost:3000',      // Frontend/Kiosk
-  process.env.CORS_ORIGIN_ADMIN || 'http://localhost:3002' // Admin console
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
-};
-app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 
 // Basic request validation middleware

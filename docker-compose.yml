@@ -1,5 +1,6 @@
 # Docker Compose for 10 Minute Pokemon
 # Includes app, PostgreSQL, and MinIO - everything needed to run
+# All configuration is in .env file
 
 services:
   app:
@@ -12,31 +13,16 @@ services:
     ports:
       - "80:80"
     environment:
-      NODE_ENV: production
-      PORT: 3001
-
-      # Database
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-tenmp_db}
-      DB_USERNAME: ${DB_USERNAME:-tenmp_user}
-      DB_PASSWORD: ${DB_PASSWORD:-tenmp_password}
-
-      # MinIO
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: "false"
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      MINIO_BUCKET: ${MINIO_BUCKET:-game-saves}
-
-      # CORS
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
-      CORS_ORIGIN_ADMIN: ${CORS_ORIGIN_ADMIN:-http://admin.localhost}
-
-      # Admin
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
-
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,13 +42,13 @@ services:
     container_name: tenmp-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-tenmp_db}
-      POSTGRES_USER: ${DB_USERNAME:-tenmp_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-tenmp_password}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-tenmp_user} -d ${DB_NAME:-tenmp_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -73,10 +59,10 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     ports:
-      - "9001:9001"  # MinIO Console (optional, for debugging)
+      - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - minio_data:/data
     healthcheck:

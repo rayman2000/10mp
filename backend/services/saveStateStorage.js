@@ -15,8 +15,8 @@ class SaveStateStorage {
       const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
       const port = parseInt(process.env.MINIO_PORT) || 9000;
       const useSSL = process.env.MINIO_USE_SSL === 'true';
-      const accessKey = process.env.MINIO_ROOT_USER || 'minioadmin';
-      const secretKey = process.env.MINIO_ROOT_PASSWORD || 'minioadmin123';
+      const accessKey = process.env.MINIO_ACCESS_KEY || 'minioadmin';
+      const secretKey = process.env.MINIO_SECRET_KEY || 'minioadmin';
 
       console.log(`Initializing MinIO client: ${endpoint}:${port}, SSL: ${useSSL}`);
 
