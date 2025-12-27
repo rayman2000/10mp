@@ -14,6 +14,12 @@ const sequelize = new Sequelize({
     min: 0,
     acquire: 30000,
     idle: 10000
+  },
+  dialectOptions: {
+    ssl: process.env.DB_SSL === 'false' ? false : {
+      require: true,
+      rejectUnauthorized: false
+    }
   }
 });
 

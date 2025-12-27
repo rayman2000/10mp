@@ -31,10 +31,10 @@ module.exports = {
       idle: 10000
     },
     dialectOptions: {
-      ssl: process.env.DB_SSL === 'true' ? {
+      ssl: process.env.DB_SSL === 'false' ? false : {
         require: true,
         rejectUnauthorized: false
-      } : false
+      }
     }
   },
   test: {
