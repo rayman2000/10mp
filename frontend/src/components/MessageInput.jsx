@@ -21,6 +21,13 @@ const MessageInput = ({ player, onMessageSubmit }) => {
     onMessageSubmit(finalMessage);
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
   return (
     <div className="message-input-screen">
       <div className="message-container">
@@ -32,6 +39,7 @@ const MessageInput = ({ player, onMessageSubmit }) => {
             ref={textareaRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
             maxLength={200}
             placeholder="Share a tip, hint, or message for the next player..."
             rows={4}
