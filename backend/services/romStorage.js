@@ -1,5 +1,4 @@
 const Minio = require('minio');
-const { Readable } = require('stream');
 
 class RomStorage {
   constructor() {
@@ -74,13 +73,23 @@ class RomStorage {
         bufferLength: buffer.length
       });
 
-      // Use stream-based upload for large files
-      const stream = Readable.from(buffer);
+      // Verify bucket access before upload
+      const bucketExists = await this.minioClient.bucketExists(this.bucketName);
+      console.log('Bucket exists check:', bucketExists);
+
+      if (!bucketExists) {
+        throw new Error(`Bucket ${this.bucketName} does not exist`);
+      }
+
+      // Try listing objects to verify we have write access
+      console.log('Testing bucket access...');
+
+      // Use putObject with just the required params
+      console.log('Starting upload...');
       await this.minioClient.putObject(
         this.bucketName,
         objectName,
-        stream,
-        buffer.length
+        buffer
       );
 
       console.log(`ROM uploaded: ${objectName} (${buffer.length} bytes)`);
