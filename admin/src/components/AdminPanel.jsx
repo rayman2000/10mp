@@ -474,6 +474,10 @@ const AdminPanel = () => {
                     <div className="stat-value">{stats.latestTurn.location || 'Unknown'}</div>
                     <div className="stat-label">Current Location</div>
                   </div>
+                  <div className="stat-item">
+                    <div className="stat-value">{formatMoney(stats.latestTurn.money)}</div>
+                    <div className="stat-label">Current Money</div>
+                  </div>
                 </>
               )}
             </div>
@@ -635,6 +639,7 @@ const AdminPanel = () => {
                         <strong>{turn.playerName}</strong> |
                         Location: {turn.location || 'Unknown'} |
                         Badges: {turn.badgeCount || 0} |
+                        Money: {formatMoney(turn.money)} |
                         Duration: {Math.floor((turn.turnDuration || 0) / 60)}m {(turn.turnDuration || 0) % 60}s
                       </div>
                     </div>

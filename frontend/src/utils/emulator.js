@@ -493,6 +493,7 @@ class EmulatorManager {
         location: this.readCurrentLocation(),
         badges: this.readBadgeCount(),
         playtime: this.readPlaytime(),
+        money: this.readMoney(),
         party: this.readPartyData()
       };
 
@@ -1059,6 +1060,7 @@ class EmulatorManager {
     console.log('Location:', this.readCurrentLocation());
     console.log('Badges:', this.readBadgeCount());
     console.log('Playtime:', this.readPlaytime());
+    console.log('Money:', this.readMoney());
     console.log('Player Name:', this.readPlayerName());
     console.log('Party:', this.readPartyData());
   }
@@ -1216,7 +1218,10 @@ class EmulatorManager {
     SB1_MONEY: 0x0290,                // 4 bytes - Money (encrypted with security key)
     SB1_COINS: 0x0294,                // 2 bytes - Game corner coins
     SB1_FLAGS: 0x0EE0,                // Flags array (0x120 bytes)
-    SB1_SECURITY_KEY: 0x0AF8,         // 4 bytes - XOR key for money/coins
+
+    // Security key is in SaveBlock2, NOT SaveBlock1
+    // Source: https://github.com/pret/pokefirered/blob/master/include/global.h
+    SB2_SECURITY_KEY: 0x0F20,         // 4 bytes - XOR key for money/coins (in SaveBlock2!)
 
     // Save block 2 offsets (trainer info)
     SB2_PLAYER_NAME: 0x0000,          // 8 bytes in saveblock2
@@ -1608,49 +1613,44 @@ class EmulatorManager {
 
   readMoney() {
     try {
-      // Money in saveblock1 is XOR encrypted with security key
+      // Money is in SaveBlock1, but the encryption key is in SaveBlock2
+      // Source: https://github.com/pret/pokefirered/blob/master/include/global.h
       const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
+      const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
+
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
         console.log('Invalid saveblock1 pointer for money');
         return null;
       }
-
-      console.log(`SB1 pointer: 0x${sb1Ptr.toString(16)}`);
-      console.log(`Money offset: 0x${EmulatorManager.ADDRESSES.SB1_MONEY.toString(16)} -> addr 0x${(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MONEY).toString(16)}`);
-      console.log(`Key offset: 0x${EmulatorManager.ADDRESSES.SB1_SECURITY_KEY.toString(16)} -> addr 0x${(sb1Ptr + EmulatorManager.ADDRESSES.SB1_SECURITY_KEY).toString(16)}`);
-
-      const encryptedMoney = this.readGBADword(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MONEY);
-      const securityKey = this.readGBADword(sb1Ptr + EmulatorManager.ADDRESSES.SB1_SECURITY_KEY);
-
-      // Debug: dump bytes around security key area to find the right offset
-      console.log('Searching for security key (looking for non-zero 4-byte values around expected offset):');
-      for (const testOffset of [0x0AF8, 0x0F20, 0x1F20, 0x0500, 0x0504, 0x0508]) {
-        const testVal = this.readGBADword(sb1Ptr + testOffset);
-        if (testVal !== null && testVal !== 0) {
-          console.log(`  Offset 0x${testOffset.toString(16)}: 0x${(testVal>>>0).toString(16)}`);
-        }
-      }
-
-      if (encryptedMoney === null || securityKey === null) {
-        console.log('Could not read money or security key');
+      if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
+        console.log('Invalid saveblock2 pointer for security key');
         return null;
       }
 
-      // If security key is 0, try without encryption (early game or different version)
+      // Read encrypted money from SaveBlock1
+      const encryptedMoney = this.readGBADword(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MONEY);
+      // Read security key from SaveBlock2 (NOT SaveBlock1!)
+      const securityKey = this.readGBADword(sb2Ptr + EmulatorManager.ADDRESSES.SB2_SECURITY_KEY);
+
+      if (encryptedMoney === null) {
+        console.log('Could not read money value');
+        return null;
+      }
+
+      // Decrypt money by XORing with security key
+      // If security key is 0 or null, the value might be unencrypted (early game)
       let money;
-      if (securityKey === 0) {
-        // Try reading money as unencrypted - it should be a reasonable value (0-999999)
-        if (encryptedMoney >= 0 && encryptedMoney <= 999999) {
-          money = encryptedMoney;
-          console.log(`Money (unencrypted): ${money}`);
-        } else {
-          // Might be encrypted but we don't have the right key offset
-          money = encryptedMoney;
-          console.log(`Money: ${money} (key was 0, value may be incorrect)`);
-        }
+      if (securityKey === null || securityKey === 0) {
+        money = encryptedMoney >>> 0;
+        console.log(`Money (unencrypted or key=0): ${money}`);
       } else {
         money = (encryptedMoney ^ securityKey) >>> 0;
         console.log(`Money: ${money} (encrypted: 0x${(encryptedMoney>>>0).toString(16)}, key: 0x${(securityKey>>>0).toString(16)})`);
+      }
+
+      // Sanity check: money should be 0-999999 in Pokemon games
+      if (money > 999999) {
+        console.log(`Warning: money value ${money} exceeds max (999999), may be incorrect`);
       }
 
       return money;
