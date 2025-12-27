@@ -1,8 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './PlayerEntry.css';
 
 const PlayerEntry = ({ previousMessage, onStartGame }) => {
   const [playerName, setPlayerName] = useState('');
+  const inputRef = useRef(null);
+
+  // Focus input on mount with a delay to override emulator focus
+  useEffect(() => {
+    const focusInput = () => inputRef.current?.focus();
+    // Immediate focus
+    focusInput();
+    // Delayed focus to override any competing focus
+    const timer = setTimeout(focusInput, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -33,6 +44,7 @@ const PlayerEntry = ({ previousMessage, onStartGame }) => {
         <div className="name-form">
           <label htmlFor="playerName">Enter your name and press Enter:</label>
           <input
+            ref={inputRef}
             type="text"
             id="playerName"
             value={playerName}
@@ -40,7 +52,6 @@ const PlayerEntry = ({ previousMessage, onStartGame }) => {
             onKeyPress={handleKeyPress}
             maxLength={20}
             placeholder="Your name"
-            autoFocus
           />
         </div>
       </div>

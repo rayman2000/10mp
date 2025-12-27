@@ -1,8 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './MessageInput.css';
 
 const MessageInput = ({ player, onMessageSubmit }) => {
   const [message, setMessage] = useState('');
+  const textareaRef = useRef(null);
+
+  // Focus textarea on mount with a delay to override emulator focus
+  useEffect(() => {
+    const focusInput = () => textareaRef.current?.focus();
+    // Immediate focus
+    focusInput();
+    // Delayed focus to override any competing focus
+    const timer = setTimeout(focusInput, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -18,12 +29,12 @@ const MessageInput = ({ player, onMessageSubmit }) => {
         
         <form onSubmit={handleSubmit} className="message-form">
           <textarea
+            ref={textareaRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             maxLength={200}
             placeholder="Share a tip, hint, or message for the next player..."
             rows={4}
-            autoFocus
           />
           <div className="char-counter">
             {message.length}/200 characters

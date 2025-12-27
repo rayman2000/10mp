@@ -108,10 +108,10 @@ class EmulatorManager {
       window.EJS_startOnLoaded = true; // Auto-start when loaded
       window.EJS_controls = false; // Hide start button
 
-      // Performance optimizations for low-power devices (Raspberry Pi)
+      // Performance optimizations
       window.EJS_volume = 0; // Mute audio
       window.EJS_disableAudio = true; // Disable audio processing entirely
-      window.EJS_threads = false; // Disable threading (can cause overhead on Pi)
+      window.EJS_threads = true; // Enable multi-threaded emulation (uses Web Workers)
       window.EJS_WEBGL2 = true; // Enable WebGL2 for better performance
       window.EJS_defaultOptions = {
         'shader': 'disabled', // Disable shaders for better performance
