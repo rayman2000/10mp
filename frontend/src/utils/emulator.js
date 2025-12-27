@@ -103,11 +103,18 @@ class EmulatorManager {
       window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
       
       // Optional configurations - disable controls to auto-start
-      window.EJS_volume = 0.5;
       window.EJS_color = '#4a90e2';
       window.EJS_backgroundColor = '#1a1a2e';
       window.EJS_startOnLoaded = true; // Auto-start when loaded
       window.EJS_controls = false; // Hide start button
+
+      // Performance optimizations for low-power devices (Raspberry Pi)
+      window.EJS_volume = 0; // Mute audio
+      window.EJS_disableAudio = true; // Disable audio processing entirely
+      window.EJS_threads = false; // Disable threading (can cause overhead on Pi)
+      window.EJS_defaultOptions = {
+        'shader': 'disabled', // Disable shaders for better performance
+      };
       
       // Debug callbacks with better error handling
       window.EJS_onLoaded = () => {

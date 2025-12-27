@@ -27,7 +27,7 @@ const PlayerEntry = ({ previousMessage, onStartGame }) => {
 
         <div className="previous-message">
           <h2>Message from the previous player:</h2>
-          <p>"{previousMessage}"</p>
+          <p>{previousMessage}</p>
         </div>
         
         <div className="name-form">
