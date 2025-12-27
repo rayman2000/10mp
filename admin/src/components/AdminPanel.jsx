@@ -324,6 +324,15 @@ const AdminPanel = () => {
               </div>
             </div>
 
+            {turn.message && (
+              <div className="detail-section">
+                <h3>Player Message</h3>
+                <div className="player-message-box">
+                  "{turn.message}"
+                </div>
+              </div>
+            )}
+
             <div className="detail-section">
               <h3>Party ({partyData.length} Pokemon)</h3>
               {partyData.length > 0 ? (

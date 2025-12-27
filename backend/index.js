@@ -36,12 +36,23 @@ const kioskStore = {
 // Increase limit to 50MB for ROM uploads (GBA ROMs are typically 16-32MB)
 app.use(express.json({ limit: '50mb' }));
 
+// Cross-Origin Isolation headers for SharedArrayBuffer support (required by EmulatorJS)
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 // Basic request validation middleware
 const validateGameTurn = (req, res, next) => {
-  const { playerName, badgeCount, playtime, money, turnDuration } = req.body;
+  const { playerName, badgeCount, playtime, money, turnDuration, message } = req.body;
 
   if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
     return res.status(400).json({ error: 'Valid playerName is required' });
+  }
+
+  if (playerName.length > 50) {
+    return res.status(400).json({ error: 'playerName must be 50 characters or less' });
   }
 
   if (badgeCount !== undefined && (typeof badgeCount !== 'number' || badgeCount < 0 || badgeCount > 8)) {
@@ -58,6 +69,10 @@ const validateGameTurn = (req, res, next) => {
 
   if (turnDuration !== undefined && (typeof turnDuration !== 'number' || turnDuration < 0)) {
     return res.status(400).json({ error: 'turnDuration must be a non-negative number' });
+  }
+
+  if (message !== undefined && (typeof message !== 'string' || message.length > 200)) {
+    return res.status(400).json({ error: 'message must be a string of 200 characters or less' });
   }
 
   next();
@@ -601,6 +616,7 @@ app.get('/api/saves/latest', async (req, res) => {
       playerName: latestTurn.playerName,
       location: latestTurn.location,
       badgeCount: latestTurn.badgeCount,
+      message: latestTurn.message,
       turnEndedAt: latestTurn.turnEndedAt
     });
   } catch (error) {
@@ -688,7 +704,8 @@ app.post('/api/game-turns', validateGameTurn, async (req, res) => {
       money,
       partyData,
       turnDuration,
-      saveState
+      saveState,
+      message
     } = req.body;
 
     let saveStateUrl = null;
@@ -707,6 +724,7 @@ app.post('/api/game-turns', validateGameTurn, async (req, res) => {
           money: money || 0,
           partyData,
           turnDuration: turnDuration || 600,
+          message: message || null,
           saveStateUrl: null, // Will update after MinIO upload
           turnEndedAt: new Date()
         });
@@ -742,6 +760,7 @@ app.post('/api/game-turns', validateGameTurn, async (req, res) => {
           money: money || 0,
           partyData,
           turnDuration: turnDuration || 600,
+          message: message || null,
           saveStateUrl: null,
           turnEndedAt: new Date()
         });
@@ -757,6 +776,7 @@ app.post('/api/game-turns', validateGameTurn, async (req, res) => {
         money: money || 0,
         partyData,
         turnDuration: turnDuration || 600,
+        message: message || null,
         saveStateUrl: null,
         turnEndedAt: new Date()
       });

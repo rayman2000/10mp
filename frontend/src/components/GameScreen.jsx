@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEmulator } from '../hooks/useEmulator';
-import { gameApi } from '../services/api';
 import './GameScreen.css';
 
-const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, config, previousMessage, prefetchedSaveData }) => {
+const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTurnDataCaptured, config, previousMessage, prefetchedSaveData }) => {
   const containerRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
-  const isSavingRef = useRef(false); // Ref to avoid recreating saveTurnData callback
+  const isSavingRef = useRef(false); // Ref to avoid recreating captureTurnData callback
   const [turnStartTime, setTurnStartTime] = useState(null); // Set when timer actually starts
   const [timeRemaining, setTimeRemaining] = useState(null); // Time remaining in seconds
   const {
@@ -21,8 +20,8 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
 
   console.log('GameScreen render:', { isLoaded, isRunning, error });
 
-  // Function to save turn data to backend
-  const saveTurnData = useCallback(async () => {
+  // Function to capture turn data (but not send yet - will be sent with message)
+  const captureTurnData = useCallback(async () => {
     if (!player || isSavingRef.current) return;
 
     isSavingRef.current = true;
@@ -59,16 +58,19 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
         saveState: saveState || null
       };
 
-      console.log('Saving turn data:', turnData);
-      const result = await gameApi.saveGameTurn(turnData);
-      console.log('Turn data saved successfully:', result);
+      console.log('Turn data captured (will be sent with message):', turnData);
+
+      // Pass the captured data to parent instead of sending to API
+      if (onTurnDataCaptured) {
+        onTurnDataCaptured(turnData);
+      }
     } catch (error) {
-      console.error('Failed to save turn data:', error);
+      console.error('Failed to capture turn data:', error);
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);
     }
-  }, [player, turnStartTime, config, saveGame, scrapeData]);
+  }, [player, turnStartTime, config, saveGame, scrapeData, onTurnDataCaptured]);
 
   // Track if we've already loaded the save to prevent re-loading
   const saveLoadAttemptedRef = useRef(false);
@@ -146,7 +148,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
   }, [isActive, isRunning]);
 
   // Use refs to store callbacks and config so timer is independent of renders
-  const saveTurnDataRef = useRef(saveTurnData);
+  const captureTurnDataRef = useRef(captureTurnData);
   const onGameEndRef = useRef(onGameEnd);
   const configRef = useRef(config);
   const timerRef = useRef(null);
@@ -154,8 +156,8 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
 
   // Keep refs updated with latest values
   useEffect(() => {
-    saveTurnDataRef.current = saveTurnData;
-  }, [saveTurnData]);
+    captureTurnDataRef.current = captureTurnData;
+  }, [captureTurnData]);
 
   useEffect(() => {
     onGameEndRef.current = onGameEnd;
@@ -203,7 +205,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
     timerRef.current = setTimeout(async () => {
       console.log('⏰ Timer FIRED! Ending turn...');
       try {
-        await saveTurnDataRef.current();
+        await captureTurnDataRef.current();
         console.log('Save completed, calling onGameEnd...');
       } catch (error) {
         console.error('Error during save on timer end:', error);
@@ -287,10 +289,13 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, conf
 
   return (
     <div className="game-screen-fullscreen">
-      {/* Timer display */}
+      {/* Title and Timer display */}
       {isActive && timeRemaining !== null && (
-        <div className={`game-timer ${timeRemaining <= 60 ? 'game-timer-warning' : ''}`}>
-          {formatTime(timeRemaining)}
+        <div className="game-header-overlay">
+          <div className="game-title">10 Minute Pokemon</div>
+          <div className={`game-timer ${timeRemaining <= 60 ? 'game-timer-warning' : ''}`}>
+            {formatTime(timeRemaining)}
+          </div>
         </div>
       )}
       {/* Previous player message sidebar */}

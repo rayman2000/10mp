@@ -14,6 +14,7 @@ function App() {
   const [kioskApproved, setKioskApproved] = useState(false); // Track if kiosk has been approved
   const [prefetchedSaveData, setPrefetchedSaveData] = useState(null); // Pre-fetched save data
   const [saveDataReady, setSaveDataReady] = useState(false); // Track if save fetch is complete
+  const [pendingTurnData, setPendingTurnData] = useState(null); // Turn data waiting for message
   const [config, setConfig] = useState({
     turnDurationMinutes: 10,
     autoSaveIntervalMinutes: 1
@@ -32,6 +33,15 @@ function App() {
 
         if (latestSave && latestSave.saveStateUrl) {
           console.log(`Found save from turn ${latestSave.turnId}, downloading from: ${latestSave.saveStateUrl}`);
+
+          // Set the previous player's message if available
+          if (latestSave.message) {
+            console.log(`Previous player message: "${latestSave.message}"`);
+            setPreviousMessage(latestSave.message);
+          } else {
+            console.log('No message from previous player');
+          }
+
           const saveData = await saveApi.downloadSave(latestSave.saveStateUrl);
           console.log('Downloaded save data:', saveData ? `${saveData.byteLength} bytes` : 'null');
 
@@ -87,6 +97,7 @@ function App() {
             isActive={true}
             approved={true}
             onGameEnd={handleGameEnd}
+            onTurnDataCaptured={setPendingTurnData}
             config={config}
             previousMessage={previousMessage}
             prefetchedSaveData={prefetchedSaveData}
@@ -101,7 +112,7 @@ function App() {
         </div>
       )}
 
-      {currentScreen === 'entry' && (
+      {currentScreen === 'entry' && saveDataReady && (
         <div className="screen-overlay">
           <PlayerEntry
             previousMessage={previousMessage}
@@ -113,13 +124,31 @@ function App() {
           />
         </div>
       )}
+
+      {currentScreen === 'entry' && !saveDataReady && (
+        <div className="screen-overlay">
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            color: 'white',
+            fontSize: '20px'
+          }}>
+            <div>Loading game data...</div>
+          </div>
+        </div>
+      )}
       
       {currentScreen === 'message' && (
         <div className="screen-overlay">
           <MessageInput
             player={currentPlayer}
+            pendingTurnData={pendingTurnData}
             onMessageSubmit={(message) => {
               setPreviousMessage(message);
+              setPendingTurnData(null); // Clear after submission
               setCurrentScreen('entry');
             }}
           />

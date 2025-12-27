@@ -41,6 +41,11 @@ module.exports = (sequelize, DataTypes) => {
     field: 'turn_duration',
     comment: 'Turn duration in seconds (default 10 minutes)'
   },
+  message: {
+    type: DataTypes.STRING(500),
+    allowNull: true,
+    comment: 'Message left by player for the next player'
+  },
   turnEndedAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,

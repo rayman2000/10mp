@@ -55,23 +55,43 @@
   background: #000;
 }
 
-/* Timer display in top corner */
-.game-timer {
+/* Header overlay with title and timer */
+.game-header-overlay {
   position: fixed;
-  top: 16px;
-  right: 16px;
+  top: 20px;
+  right: 20px;
   z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 340px;
+  padding: 20px 28px;
+  background: rgba(0, 0, 0, 0.85);
+  border-radius: 12px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+/* Game title above timer */
+.game-title {
   font-family: monospace, 'Courier New', serif;
-  font-size: 24px;
+  font-size: 28px;
   font-weight: bold;
   color: #ffffff;
-  background: rgba(0, 0, 0, 0.7);
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 2px;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-  pointer-events: none;
+}
+
+/* Timer display */
+.game-timer {
+  font-family: monospace, 'Courier New', serif;
+  font-size: 42px;
+  font-weight: bold;
+  color: #ffffff;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 /* Warning state when time is running low (1 minute or less) */
@@ -99,33 +119,35 @@
   }
 }
 
-/* Message sidebar on left side */
+/* Message sidebar on right side below timer */
 .game-message-sidebar {
   position: fixed;
-  top: 50%;
-  left: 16px;
-  transform: translateY(-50%);
+  top: 220px;
+  right: 20px;
   z-index: 10001;
-  max-width: 250px;
-  background: rgba(0, 0, 0, 0.8);
-  padding: 16px;
+  width: 340px;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 20px 28px;
   border-radius: 12px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
   pointer-events: none;
 }
 
 .game-message-header {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 8px;
+  font-family: monospace, 'Courier New', serif;
+  font-size: 18px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 14px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
 }
 
 .game-message-content {
-  font-size: 16px;
+  font-family: monospace, 'Courier New', serif;
+  font-size: 24px;
   color: #ffffff;
-  line-height: 1.4;
+  line-height: 1.5;
   word-wrap: break-word;
 }

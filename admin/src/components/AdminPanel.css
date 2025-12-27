@@ -572,6 +572,17 @@
   color: #c53030;
 }
 
+.player-message-box {
+  background: #f0f4f8;
+  padding: 15px 20px;
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+  font-style: italic;
+  color: #333;
+  line-height: 1.5;
+  font-size: 15px;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
