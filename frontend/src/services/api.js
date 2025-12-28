@@ -14,10 +14,29 @@ const api = axios.create({
   }
 });
 
+// Efficient Base64 encoding using chunked processing (O(n) instead of O(n²))
+function uint8ArrayToBase64(uint8Array) {
+  if (!uint8Array || !(uint8Array instanceof Uint8Array)) {
+    return uint8Array; // Return as-is if not a Uint8Array (might already be Base64 string)
+  }
+  const CHUNK_SIZE = 0x8000; // 32KB chunks to avoid call stack issues
+  const chunks = [];
+  for (let i = 0; i < uint8Array.length; i += CHUNK_SIZE) {
+    const chunk = uint8Array.subarray(i, Math.min(i + CHUNK_SIZE, uint8Array.length));
+    chunks.push(String.fromCharCode.apply(null, chunk));
+  }
+  return btoa(chunks.join(''));
+}
+
 export const gameApi = {
   async saveGameTurn(turnData) {
     try {
-      const response = await api.post('/api/game-turns', turnData);
+      // Convert Uint8Array saveState to Base64 for JSON transmission
+      const dataToSend = { ...turnData };
+      if (turnData.saveState instanceof Uint8Array) {
+        dataToSend.saveState = uint8ArrayToBase64(turnData.saveState);
+      }
+      const response = await api.post('/api/game-turns', dataToSend);
       return response.data;
     } catch (error) {
       console.error('Failed to save game turn:', error);

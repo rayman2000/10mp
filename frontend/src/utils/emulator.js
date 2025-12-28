@@ -14,16 +14,6 @@ class EmulatorManager {
     console.log('EmulatorManager initialized');
   }
 
-  // Helper to convert ArrayBuffer/Uint8Array to Base64
-  arrayBufferToBase64(buffer) {
-    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
   async initialize() {
     try {
       console.log('Starting EmulatorJS initialization...');
@@ -302,9 +292,10 @@ class EmulatorManager {
       }
 
       if (stateData) {
-        const base64 = this.arrayBufferToBase64(stateData);
-        console.log(`✅ Save state captured: ${base64.length} chars (Base64)`);
-        return base64;
+        // Return as Uint8Array directly - no Base64 encoding overhead
+        const uint8Array = stateData instanceof Uint8Array ? stateData : new Uint8Array(stateData);
+        console.log(`✅ Save state captured: ${uint8Array.length} bytes`);
+        return uint8Array;
       }
 
       console.warn('Could not capture save state - no method available');
@@ -324,21 +315,30 @@ class EmulatorManager {
 
       console.log('Loading emulator save state (snapshot)...');
 
-      // Convert Base64 back to Uint8Array if needed
-      let data = stateData;
-      if (typeof stateData === 'string' && stateData.length > 0) {
+      // Handle different input types - prefer Uint8Array directly
+      let data;
+      if (stateData instanceof Uint8Array) {
+        data = stateData;
+        console.log('Using Uint8Array directly:', data.length, 'bytes');
+      } else if (stateData instanceof ArrayBuffer) {
+        data = new Uint8Array(stateData);
+        console.log('Converted ArrayBuffer to Uint8Array:', data.length, 'bytes');
+      } else if (typeof stateData === 'string' && stateData.length > 0) {
+        // Legacy Base64 fallback for backward compatibility
         try {
           const binaryString = atob(stateData);
-          const bytes = new Uint8Array(binaryString.length);
+          data = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+            data[i] = binaryString.charCodeAt(i);
           }
-          data = bytes;
           console.log('Converted Base64 to Uint8Array:', data.length, 'bytes');
         } catch (decodeError) {
           console.warn('Base64 decode failed:', decodeError.message);
           return false;
         }
+      } else {
+        console.warn('Unsupported state data type:', typeof stateData);
+        return false;
       }
 
       // Method 1: gameManager.loadState() - primary method for save states
@@ -699,11 +699,14 @@ class EmulatorManager {
   // Save states contain serialized GBA memory that we can parse
   _cachedSaveStateMemory = null;
   _saveStateMemoryTime = 0;
+  // Permanently cached memory layout offsets (don't change between states)
+  _cachedMemoryOffsets = null;
 
   // Get GBA memory by parsing the current save state
   getMemoryFromSaveState() {
     const now = Date.now();
-    // Cache for 500ms to avoid constant state captures
+    // Cache state data for 500ms to avoid constant state captures
+    // But memory offsets are cached permanently (they don't change)
     if (this._cachedSaveStateMemory && (now - this._saveStateMemoryTime) < 500) {
       return this._cachedSaveStateMemory;
     }
@@ -711,53 +714,53 @@ class EmulatorManager {
     try {
       const gameManager = window.EJS_emulator?.gameManager;
       if (!gameManager?.getState) {
-        console.log('getState not available');
         return null;
       }
 
       const stateData = gameManager.getState();
       if (!stateData || stateData.length < 0x50000) {
-        console.log('Save state too small or empty:', stateData?.length);
         return null;
       }
 
       const state = new Uint8Array(stateData);
-      console.log('Save state size:', state.length, 'bytes');
 
-      // Check for known save state formats
-      const magic = String.fromCharCode(state[0], state[1], state[2], state[3]);
-      console.log('Magic bytes:', magic, '(hex:', Array.from(state.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' '), ')');
-
-      let ewramBase = -1;
-      let iwramBase = -1;
-
-      // Method 1: Scan for saveblock pointer pattern
-      // Pokemon Fire Red has two consecutive pointers in IWRAM:
-      // 0x03005008: SaveBlock1 pointer (0x02xxxxxx)
-      // 0x0300500C: SaveBlock2 pointer (0x02xxxxxx)
-      // We search for this pattern in the save state
-
-      console.log('Scanning save state for saveblock pointer pattern...');
-      const found = this.scanForSaveblockPointers(state);
-
-      if (found) {
-        iwramBase = found.iwramBase;
-        ewramBase = found.ewramBase;
-        console.log(`Found memory layout via pattern scan:`);
-        console.log(`  IWRAM base in state: 0x${iwramBase.toString(16)}`);
-        console.log(`  EWRAM base in state: 0x${ewramBase.toString(16)}`);
-        console.log(`  Header offset: 0x${found.headerOffset.toString(16)}`);
+      // Use cached offsets if available (massive performance win - skip all scanning)
+      if (this._cachedMemoryOffsets) {
+        this._cachedSaveStateMemory = {
+          state,
+          ewramBase: this._cachedMemoryOffsets.ewramBase,
+          iwramBase: this._cachedMemoryOffsets.iwramBase
+        };
+        this._saveStateMemoryTime = now;
+        return this._cachedSaveStateMemory;
       }
 
-      if (iwramBase === -1) {
+      // First time: scan for memory layout (expensive, but only done once)
+      console.log('First-time save state scan, size:', state.length, 'bytes');
+      const magic = String.fromCharCode(state[0], state[1], state[2], state[3]);
+      console.log('Magic bytes:', magic);
+
+      const found = this.scanForSaveblockPointers(state);
+
+      if (!found) {
         console.log('Could not find GBA memory in save state');
         return null;
       }
 
+      // Cache offsets permanently - they never change for this emulator session
+      this._cachedMemoryOffsets = {
+        ewramBase: found.ewramBase,
+        iwramBase: found.iwramBase,
+        headerOffset: found.headerOffset
+      };
+      console.log(`Memory layout cached permanently:`);
+      console.log(`  IWRAM base: 0x${found.iwramBase.toString(16)}`);
+      console.log(`  EWRAM base: 0x${found.ewramBase.toString(16)}`);
+
       this._cachedSaveStateMemory = {
         state,
-        ewramBase,
-        iwramBase
+        ewramBase: found.ewramBase,
+        iwramBase: found.iwramBase
       };
       this._saveStateMemoryTime = now;
 
@@ -1747,7 +1750,6 @@ class EmulatorManager {
 
       // Method 1: Try gameManager.simulateInput (primary method per EmulatorJS docs)
       if (window.EJS_emulator?.gameManager?.simulateInput) {
-        console.log(`Attract: pressing ${button} (index ${buttonIndex}) via gameManager.simulateInput`);
         window.EJS_emulator.gameManager.simulateInput(0, buttonIndex, 1);
         setTimeout(() => {
           window.EJS_emulator.gameManager.simulateInput(0, buttonIndex, 0);
@@ -1757,7 +1759,6 @@ class EmulatorManager {
 
       // Method 2: Try EmulatorJS root simulateInput API
       if (window.EJS_emulator?.simulateInput) {
-        console.log(`Attract: pressing ${button} (index ${buttonIndex}) via EJS_emulator.simulateInput`);
         window.EJS_emulator.simulateInput(0, buttonIndex, 1); // player 0, button, pressed
         setTimeout(() => {
           window.EJS_emulator.simulateInput(0, buttonIndex, 0); // release
@@ -1768,7 +1769,6 @@ class EmulatorManager {
       // Method 3: Try Module._simulate_input or similar
       const Module = this.getModule();
       if (Module?._simulate_input) {
-        console.log(`Attract: pressing ${button} (index ${buttonIndex}) via Module._simulate_input`);
         Module._simulate_input(0, buttonIndex, 1);
         setTimeout(() => {
           Module._simulate_input(0, buttonIndex, 0);
@@ -1777,7 +1777,6 @@ class EmulatorManager {
       }
 
       // Method 4: Fall back to keyboard events on the emulator canvas
-      console.log(`Attract: No simulateInput API found, falling back to keyboard events`);
       const keyMap = {
         'a': { key: 'x', code: 'KeyX', keyCode: 88 },
         'b': { key: 'z', code: 'KeyZ', keyCode: 90 },

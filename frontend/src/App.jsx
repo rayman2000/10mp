@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import './App.css';
 import GameScreen from './components/GameScreen';
 import PlayerEntry from './components/PlayerEntry';
@@ -6,6 +6,17 @@ import MessageInput from './components/MessageInput';
 import ErrorBoundary from './components/ErrorBoundary';
 import KioskConnect from './components/KioskConnect';
 import { saveApi } from './services/api';
+
+// Stable style object to avoid re-renders
+const loadingStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100vh',
+  color: 'white',
+  fontSize: '20px'
+};
 
 function App() {
   const [currentScreen, setCurrentScreen] = useState('connect'); // 'connect', 'entry', 'game', 'message'
@@ -45,12 +56,10 @@ function App() {
           console.log('Downloaded save data:', saveData ? `${saveData.byteLength} bytes` : 'null');
 
           if (saveData) {
-            // Convert to base64 for the emulator
-            const base64 = btoa(
-              new Uint8Array(saveData).reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
-            console.log(`✅ Save data pre-fetched: ${base64.length} chars in ${Date.now() - startTime}ms`);
-            setPrefetchedSaveData(base64);
+            // Store as Uint8Array directly - no Base64 encoding needed
+            const uint8Array = new Uint8Array(saveData);
+            console.log(`✅ Save data pre-fetched: ${uint8Array.length} bytes in ${Date.now() - startTime}ms`);
+            setPrefetchedSaveData(uint8Array);
           } else {
             console.warn('Downloaded save data was empty');
           }
@@ -86,12 +95,36 @@ function App() {
     setCurrentScreen('message');
   }, []);
 
+  // Memoized callback for starting game
+  const handleStartGame = useCallback((playerName) => {
+    setCurrentPlayer(playerName);
+    setCurrentScreen('game');
+  }, []);
+
+  // Memoized callback for message submission
+  const handleMessageSubmit = useCallback((message) => {
+    setPreviousMessage(message);
+    // Pass the captured save state to the next turn
+    setPendingTurnData(prev => {
+      if (prev?.saveState) {
+        setPrefetchedSaveData(prev.saveState);
+      }
+      return null; // Clear after submission
+    });
+    setCurrentScreen('entry');
+  }, []);
+
+  // Memoized error boundary reset
+  const handleErrorReset = useCallback(() => {
+    setCurrentScreen('entry');
+  }, []);
+
   return (
     <div className="App">
       {/* Keep GameScreen mounted once approved to preserve emulator state between turns */}
       {/* Always visible - attract mode shows game behind overlay screens */}
       {kioskApproved && (
-        <ErrorBoundary onReset={() => setCurrentScreen('entry')}>
+        <ErrorBoundary onReset={handleErrorReset}>
           <GameScreen
             player={currentPlayer}
             isActive={currentScreen === 'game'}
@@ -117,25 +150,14 @@ function App() {
           <PlayerEntry
             previousMessage={previousMessage}
             saveDataReady={saveDataReady}
-            onStartGame={(playerName) => {
-              setCurrentPlayer(playerName);
-              setCurrentScreen('game');
-            }}
+            onStartGame={handleStartGame}
           />
         </div>
       )}
 
       {currentScreen === 'entry' && !saveDataReady && (
         <div className="screen-overlay">
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100vh',
-            color: 'white',
-            fontSize: '20px'
-          }}>
+          <div style={loadingStyle}>
             <div>Loading game data...</div>
           </div>
         </div>
@@ -146,15 +168,7 @@ function App() {
           <MessageInput
             player={currentPlayer}
             pendingTurnData={pendingTurnData}
-            onMessageSubmit={(message) => {
-              setPreviousMessage(message);
-              // Pass the captured save state to the next turn
-              if (pendingTurnData?.saveState) {
-                setPrefetchedSaveData(pendingTurnData.saveState);
-              }
-              setPendingTurnData(null); // Clear after submission
-              setCurrentScreen('entry');
-            }}
+            onMessageSubmit={handleMessageSubmit}
           />
         </div>
       )}

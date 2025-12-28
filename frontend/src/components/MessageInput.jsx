@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { gameApi } from '../services/api';
 import './MessageInput.css';
 import badgeSvg from '../badge.svg';
 
-const MessageInput = ({ player, pendingTurnData, onMessageSubmit }) => {
+const MessageInput = memo(({ player, pendingTurnData, onMessageSubmit }) => {
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef(null);
@@ -87,6 +87,6 @@ const MessageInput = ({ player, pendingTurnData, onMessageSubmit }) => {
       </div>
     </div>
   );
-};
+});
 
 export default MessageInput;

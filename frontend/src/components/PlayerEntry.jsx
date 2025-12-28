@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import './PlayerEntry.css';
 
-const PlayerEntry = ({ previousMessage, onStartGame, saveDataReady = true }) => {
+const PlayerEntry = memo(({ previousMessage, onStartGame, saveDataReady = true }) => {
   const [playerName, setPlayerName] = useState('');
   const inputRef = useRef(null);
 
@@ -69,6 +69,6 @@ const PlayerEntry = ({ previousMessage, onStartGame, saveDataReady = true }) => 
       </div>
     </div>
   );
-};
+});
 
 export default PlayerEntry;

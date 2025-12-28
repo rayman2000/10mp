@@ -6,9 +6,8 @@
   height: 100vh;
   background: #000;
   z-index: 100; /* Lower z-index so overlays can appear on top */
-  /* GPU acceleration hints for better performance */
+  /* GPU layer promotion */
   transform: translateZ(0);
-  will-change: contents;
   contain: layout style;
 }
 
@@ -35,10 +34,9 @@
 .emulator-container {
   width: 100vw;
   height: 100vh;
-  /* GPU acceleration for canvas rendering */
+  /* GPU layer promotion for canvas */
   transform: translateZ(0);
-  will-change: contents;
-  contain: strict;
+  contain: layout size;
 }
 
 /* Ensure emulator content fills the screen */

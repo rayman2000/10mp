@@ -1,13 +1,53 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { useEmulator } from '../hooks/useEmulator';
 import './GameScreen.css';
 
-const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTurnDataCaptured, config, previousMessage, prefetchedSaveData }) => {
+// Separate timer component to isolate re-renders (prevents 600 re-renders per turn)
+const GameTimer = memo(({ turnStartTime, turnDurationMinutes }) => {
+  const [timeRemaining, setTimeRemaining] = useState(null);
+
+  useEffect(() => {
+    if (!turnStartTime) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const turnDurationMs = (turnDurationMinutes || 3) * 60 * 1000;
+    const endTime = turnStartTime.getTime() + turnDurationMs;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
+      setTimeRemaining(remaining);
+    };
+
+    updateTimer();
+    const intervalId = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [turnStartTime, turnDurationMinutes]);
+
+  if (timeRemaining === null) return null;
+
+  const mins = Math.floor(timeRemaining / 60);
+  const secs = timeRemaining % 60;
+  const formattedTime = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+  return (
+    <div className="game-header-overlay">
+      <div className="game-title">10 Minute Pokemon</div>
+      <div className={`game-timer ${timeRemaining <= 60 ? 'game-timer-warning' : ''}`}>
+        {formattedTime}
+      </div>
+    </div>
+  );
+});
+
+const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd, onTurnDataCaptured, config, previousMessage, prefetchedSaveData }) => {
   const containerRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false); // Ref to avoid recreating captureTurnData callback
   const [turnStartTime, setTurnStartTime] = useState(null); // Set when timer actually starts
-  const [timeRemaining, setTimeRemaining] = useState(null); // Time remaining in seconds
   const {
     isLoaded,
     isRunning,
@@ -19,8 +59,6 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     simulateKeyPress,
     getRandomAttractButton
   } = useEmulator(config, approved);
-
-  console.log('GameScreen render:', { isLoaded, isRunning, error });
 
   // Function to capture turn data (but not send yet - will be sent with message)
   const captureTurnData = useCallback(async () => {
@@ -86,7 +124,7 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
       return;
     }
 
-    console.log(`Loading save for ${reason} (${prefetchedSaveData.length} chars)...`);
+    console.log(`Loading save for ${reason} (${prefetchedSaveData.length} bytes)...`);
 
     // Try loading with increasing delays (emulator might need time to fully initialize)
     const delays = [500, 1000, 2000];
@@ -133,33 +171,48 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     }
   }, [isActive]);
 
-  // Focus emulator when becoming active or when emulator becomes ready
+  // Focus emulator when becoming active - use MutationObserver instead of polling
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
-    const focusEmulator = () => {
-      const emulatorCanvas = containerRef.current?.querySelector('canvas');
-      if (emulatorCanvas) {
-        emulatorCanvas.focus();
-        emulatorCanvas.click();
-        return true;
-      }
-      return false;
+    const focusCanvas = (canvas) => {
+      canvas.focus();
+      canvas.click();
     };
 
-    // Try focusing immediately, then retry a few times if canvas isn't ready
-    const focusTimeout = setTimeout(() => {
-      if (!focusEmulator()) {
-        // Retry with increasing delays
-        const retryDelays = [100, 250, 500, 1000];
-        retryDelays.forEach((delay, i) => {
-          setTimeout(() => focusEmulator(), delay);
-        });
-      }
-    }, 50);
+    // Check if canvas already exists
+    const existingCanvas = containerRef.current.querySelector('canvas');
+    if (existingCanvas) {
+      focusCanvas(existingCanvas);
+      return;
+    }
 
-    return () => clearTimeout(focusTimeout);
-  }, [isActive, isRunning]);
+    // Use MutationObserver to detect when canvas is added (more efficient than polling)
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeName === 'CANVAS') {
+            focusCanvas(node);
+            observer.disconnect();
+            return;
+          }
+          // Check if canvas is nested inside added node
+          if (node.querySelector) {
+            const canvas = node.querySelector('canvas');
+            if (canvas) {
+              focusCanvas(canvas);
+              observer.disconnect();
+              return;
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(containerRef.current, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, [isActive]);
 
   // Use refs to store callbacks and config so timer is independent of renders
   const captureTurnDataRef = useRef(captureTurnData);
@@ -183,12 +236,9 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
 
   // Auto-end game after configured duration - ONLY depends on isActive
   useEffect(() => {
-    console.log('Timer effect running:', { isActive, timerStarted: timerStartedRef.current });
-
     if (!isActive) {
       // When becoming inactive, clear timer and reset for next turn
       if (timerRef.current) {
-        console.log('Clearing timer - no longer active');
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
@@ -199,13 +249,11 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
 
     // Only start timer once per active session
     if (timerStartedRef.current) {
-      console.log('Timer already started for this session, skipping');
       return;
     }
 
     const currentConfig = configRef.current;
     if (!currentConfig) {
-      console.log('Timer not started: config not yet available');
       return;
     }
 
@@ -213,14 +261,10 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     const turnDurationMs = (currentConfig.turnDurationMinutes || 3) * 60000;
     const now = new Date();
     setTurnStartTime(now); // Sync display timer with actual timer
-    const endTime = new Date(now.getTime() + turnDurationMs);
-    console.log(`✅ Timer STARTED: Turn will end in ${currentConfig.turnDurationMinutes || 3} minutes at ${endTime.toLocaleTimeString()}`);
 
     timerRef.current = setTimeout(async () => {
-      console.log('⏰ Timer FIRED! Ending turn...');
       try {
         await captureTurnDataRef.current();
-        console.log('Save completed, calling onGameEnd...');
       } catch (error) {
         console.error('Error during save on timer end:', error);
       }
@@ -230,7 +274,6 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
 
     return () => {
       if (timerRef.current) {
-        console.log('Timer cleanup on unmount');
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
@@ -245,8 +288,6 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
       return;
     }
 
-    console.log('Attract mode effect triggered, waiting for gameManager to be ready...');
-
     // Wait for gameManager to be fully available before starting attract mode
     let attractInterval = null;
     let checkInterval = null;
@@ -256,24 +297,15 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
       if (started) return;
       started = true;
 
-      console.log('Starting attract mode - random inputs every 500ms');
-      console.log('EJS_emulator available:', !!window.EJS_emulator);
-      console.log('gameManager available:', !!window.EJS_emulator?.gameManager);
-      console.log('simulateInput available:', !!window.EJS_emulator?.gameManager?.simulateInput);
-
       attractInterval = setInterval(() => {
         const button = getRandomAttractButton();
-        const success = simulateKeyPress(button);
-        if (!success) {
-          console.log('simulateKeyPress failed for button:', button);
-        }
-      }, 500);
+        simulateKeyPress(button);
+      }, 1000);
     };
 
     // Check if gameManager.simulateInput is available
     const checkReady = () => {
       if (window.EJS_emulator?.gameManager?.simulateInput) {
-        console.log('gameManager.simulateInput is ready!');
         if (checkInterval) {
           clearInterval(checkInterval);
           checkInterval = null;
@@ -291,44 +323,11 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     }
 
     return () => {
-      console.log('Stopping attract mode');
       if (checkInterval) clearInterval(checkInterval);
       if (attractInterval) clearInterval(attractInterval);
     };
   }, [isRunning, isActive, simulateKeyPress, getRandomAttractButton]);
 
-  // Update visible countdown timer every second
-  useEffect(() => {
-    if (!isActive || !config || !turnStartTime) {
-      setTimeRemaining(null);
-      return;
-    }
-
-    const turnDurationMs = (config.turnDurationMinutes || 3) * 60 * 1000;
-    const endTime = turnStartTime.getTime() + turnDurationMs;
-
-    const updateTimer = () => {
-      const now = Date.now();
-      const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
-      setTimeRemaining(remaining);
-    };
-
-    // Update immediately
-    updateTimer();
-
-    // Update every second
-    const intervalId = setInterval(updateTimer, 1000);
-
-    return () => clearInterval(intervalId);
-  }, [isActive, config, turnStartTime]);
-
-  // Format time remaining as MM:SS
-  const formatTime = (seconds) => {
-    if (seconds === null) return '--:--';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
 
   if (error) {
     return (
@@ -363,14 +362,12 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
 
   return (
     <div className="game-screen-fullscreen">
-      {/* Title and Timer display */}
-      {isActive && timeRemaining !== null && (
-        <div className="game-header-overlay">
-          <div className="game-title">10 Minute Pokemon</div>
-          <div className={`game-timer ${timeRemaining <= 60 ? 'game-timer-warning' : ''}`}>
-            {formatTime(timeRemaining)}
-          </div>
-        </div>
+      {/* Title and Timer display - separate component to avoid re-rendering GameScreen */}
+      {isActive && (
+        <GameTimer
+          turnStartTime={turnStartTime}
+          turnDurationMinutes={config?.turnDurationMinutes}
+        />
       )}
       {/* Previous player message sidebar */}
       {isActive && previousMessage && (
@@ -401,6 +398,6 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
       </div>
     </div>
   );
-};
+});
 
 export default GameScreen;

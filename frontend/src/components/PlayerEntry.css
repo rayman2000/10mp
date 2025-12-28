@@ -177,7 +177,6 @@
     inset 2px 2px 0px #b35959,
     inset -2px -2px 0px #6b3030,
     6px 6px 20px rgba(0, 0, 0, 0.4);
-  animation: blink-arrow 1s ease-in-out infinite;
 }
 
 .arrow-text {
@@ -196,16 +195,6 @@
   text-shadow: 4px 4px 0px #5c2c2c;
 }
 
-@keyframes blink-arrow {
-  0%, 100% {
-    opacity: 1;
-    transform: translateY(-50%) translateX(0);
-  }
-  50% {
-    opacity: 0.7;
-    transform: translateY(-50%) translateX(15px);
-  }
-}
 
 /* Responsive arrow - scale down on smaller screens */
 @media (max-width: 1600px) {
@@ -249,16 +238,6 @@
   }
   .arrow-icon {
     font-size: 48px;
-  }
-  @keyframes blink-arrow {
-    0%, 100% {
-      opacity: 1;
-      transform: translateX(-50%) rotate(90deg) translateX(0);
-    }
-    50% {
-      opacity: 0.7;
-      transform: translateX(-50%) rotate(90deg) translateX(10px);
-    }
   }
 }
 
