@@ -5,7 +5,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(45deg, #4a5568 0%, #2d3748 50%, #1a202c 100%);
+  background: transparent; /* Let emulator show through */
   color: #f7fafc;
   font-family: monospace, 'Courier New', serif;
   font-weight: bold;
@@ -204,5 +204,76 @@
   50% {
     opacity: 0.7;
     transform: translateY(-50%) translateX(15px);
+  }
+}
+
+/* Responsive arrow - scale down on smaller screens */
+@media (max-width: 1600px) {
+  .play-now-arrow {
+    padding: 20px 35px;
+    gap: 20px;
+  }
+  .arrow-text {
+    font-size: 54px;
+  }
+  .arrow-icon {
+    font-size: 75px;
+  }
+}
+
+@media (max-width: 1400px) {
+  .play-now-arrow {
+    padding: 15px 25px;
+    gap: 15px;
+    left: 20px;
+  }
+  .arrow-text {
+    font-size: 42px;
+  }
+  .arrow-icon {
+    font-size: 58px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .play-now-arrow {
+    /* Move above the panel */
+    left: 50%;
+    top: 20px;
+    transform: translateX(-50%) rotate(90deg);
+    padding: 12px 20px;
+    gap: 12px;
+  }
+  .arrow-text {
+    font-size: 36px;
+  }
+  .arrow-icon {
+    font-size: 48px;
+  }
+  @keyframes blink-arrow {
+    0%, 100% {
+      opacity: 1;
+      transform: translateX(-50%) rotate(90deg) translateX(0);
+    }
+    50% {
+      opacity: 0.7;
+      transform: translateX(-50%) rotate(90deg) translateX(10px);
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .play-now-arrow {
+    padding: 10px 16px;
+    gap: 10px;
+    border-width: 4px;
+    border-radius: 12px;
+  }
+  .arrow-text {
+    font-size: 28px;
+    letter-spacing: 1px;
+  }
+  .arrow-icon {
+    font-size: 36px;
   }
 }

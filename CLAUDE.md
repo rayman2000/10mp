@@ -94,7 +94,7 @@ The frontend follows a layered emulator integration:
 
 1. **EmulatorManager** (`frontend/src/utils/emulator.js`) - Core class that wraps Emulator.js
    - Handles initialization with auto-detection of `#emulator-container`
-   - Manages save states with auto-save every 10 seconds
+   - Manages save states (captured at turn end)
    - Provides ROM memory scraping framework for Pokemon Fire Red
    - Includes specific memory addresses for game data extraction
 

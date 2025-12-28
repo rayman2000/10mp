@@ -16,8 +16,7 @@ function App() {
   const [saveDataReady, setSaveDataReady] = useState(false); // Track if save fetch is complete
   const [pendingTurnData, setPendingTurnData] = useState(null); // Turn data waiting for message
   const [config, setConfig] = useState({
-    turnDurationMinutes: 10,
-    autoSaveIntervalMinutes: 1
+    turnDurationMinutes: parseInt(import.meta.env.VITE_TURN_DURATION_MINUTES, 10) || 10
   });
 
   // Pre-fetch save data when kiosk is approved (before player enters name)
@@ -90,21 +89,20 @@ function App() {
   return (
     <div className="App">
       {/* Keep GameScreen mounted once approved to preserve emulator state between turns */}
+      {/* Always visible - attract mode shows game behind overlay screens */}
       {kioskApproved && (
-        <div style={{ display: currentScreen === 'game' ? 'block' : 'none' }}>
-          <ErrorBoundary onReset={() => setCurrentScreen('entry')}>
-            <GameScreen
-              player={currentPlayer}
-              isActive={currentScreen === 'game'}
-              approved={true}
-              onGameEnd={handleGameEnd}
-              onTurnDataCaptured={setPendingTurnData}
-              config={config}
-              previousMessage={previousMessage}
-              prefetchedSaveData={prefetchedSaveData}
-            />
-          </ErrorBoundary>
-        </div>
+        <ErrorBoundary onReset={() => setCurrentScreen('entry')}>
+          <GameScreen
+            player={currentPlayer}
+            isActive={currentScreen === 'game'}
+            approved={true}
+            onGameEnd={handleGameEnd}
+            onTurnDataCaptured={setPendingTurnData}
+            config={config}
+            previousMessage={previousMessage}
+            prefetchedSaveData={prefetchedSaveData}
+          />
+        </ErrorBoundary>
       )}
       
       {/* Overlay screens when not in game mode */}

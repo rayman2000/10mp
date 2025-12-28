@@ -6,15 +6,12 @@ class EmulatorManager {
   constructor(config = {}) {
     this.isRunning = false;
     this.gameState = null;
-    this.saveStateInterval = null;
     this.config = config;
-    this.autoSaveIntervalMs = (config.autoSaveIntervalMinutes || 1) * 60000;
-    this.autoSaveCallback = null; // Callback for auto-save uploads
     // Storage for captured save data from EmulatorJS callbacks
     this.lastSaveState = null;
     this.lastScreenshot = null;
     this.lastSaveData = null;
-    console.log(`EmulatorManager initialized with auto-save interval: ${config.autoSaveIntervalMinutes || 1} minutes`);
+    console.log('EmulatorManager initialized');
   }
 
   // Helper to convert ArrayBuffer/Uint8Array to Base64
@@ -25,11 +22,6 @@ class EmulatorManager {
       binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
-  }
-
-  setAutoSaveCallback(callback) {
-    this.autoSaveCallback = callback;
-    console.log('Auto-save callback registered');
   }
 
   async initialize() {
@@ -97,10 +89,9 @@ class EmulatorManager {
         if (window.EJS_emulator && window.EJS_emulator.Module) {
           console.log('EJS_emulator.Module available:', !!window.EJS_emulator.Module);
         }
-        this.startAutoSave();
       };
 
-      // Capture save state data when user saves or game auto-saves
+      // Capture save state data when user saves
       window.EJS_onSaveState = (data) => {
         console.log('✅ EJS_onSaveState fired!', data);
         if (data && data.length >= 2) {
@@ -121,21 +112,12 @@ class EmulatorManager {
             format: saveInfo.format
           };
           console.log('Save data captured:', this.lastSaveData.save?.length, 'bytes');
-
-          // Call the auto-save callback if registered
-          if (this.autoSaveCallback && saveInfo.save) {
-            const base64 = this.arrayBufferToBase64(saveInfo.save);
-            this.autoSaveCallback(base64);
-          }
         }
       };
 
       window.EJS_onError = (error) => {
         console.error('❌ EmulatorJS Error:', error);
       };
-
-      // Enable fixed save interval to trigger EJS_onSaveUpdate periodically
-      window.EJS_fixedSaveInterval = this.autoSaveIntervalMs;
 
       // Add global error handler to catch script errors
       window.addEventListener('error', (e) => {
@@ -414,21 +396,6 @@ class EmulatorManager {
     } catch (error) {
       console.error('Failed to load save state:', error);
       return false;
-    }
-  }
-
-  startAutoSave() {
-    // Auto-save is now handled by EJS_fixedSaveInterval and EJS_onSaveUpdate callback
-    // which is set during initialization. This method is kept for compatibility.
-    console.log(`Auto-save configured via EJS_fixedSaveInterval: ${this.autoSaveIntervalMs}ms`);
-    console.log('EJS_onSaveUpdate will trigger autoSaveCallback when game saves');
-  }
-
-  stopAutoSave() {
-    // No interval to stop since EJS handles it, but clear any legacy interval
-    if (this.saveStateInterval) {
-      clearInterval(this.saveStateInterval);
-      this.saveStateInterval = null;
     }
   }
 
@@ -1748,8 +1715,122 @@ class EmulatorManager {
 
   destroy() {
     console.log('Destroying emulator instance...');
-    this.stopAutoSave();
     this.isRunning = false;
+  }
+
+  // Simulate a button press for attract mode
+  // Buttons: 'a', 'b', 'up', 'down', 'left', 'right', 'start', 'select'
+  simulateKeyPress(button) {
+    try {
+      // EmulatorJS button index mapping for GBA
+      // These match the RetroArch RETRO_DEVICE_ID_JOYPAD constants
+      const buttonIndexMap = {
+        'b': 0,       // RETRO_DEVICE_ID_JOYPAD_B
+        'y': 1,       // RETRO_DEVICE_ID_JOYPAD_Y
+        'select': 2,  // RETRO_DEVICE_ID_JOYPAD_SELECT
+        'start': 3,   // RETRO_DEVICE_ID_JOYPAD_START
+        'up': 4,      // RETRO_DEVICE_ID_JOYPAD_UP
+        'down': 5,    // RETRO_DEVICE_ID_JOYPAD_DOWN
+        'left': 6,    // RETRO_DEVICE_ID_JOYPAD_LEFT
+        'right': 7,   // RETRO_DEVICE_ID_JOYPAD_RIGHT
+        'a': 8,       // RETRO_DEVICE_ID_JOYPAD_A
+        'x': 9,       // RETRO_DEVICE_ID_JOYPAD_X
+        'l': 10,      // RETRO_DEVICE_ID_JOYPAD_L
+        'r': 11,      // RETRO_DEVICE_ID_JOYPAD_R
+      };
+
+      const buttonIndex = buttonIndexMap[button.toLowerCase()];
+      if (buttonIndex === undefined) {
+        console.log('Unknown button:', button);
+        return false;
+      }
+
+      // Method 1: Try gameManager.simulateInput (primary method per EmulatorJS docs)
+      if (window.EJS_emulator?.gameManager?.simulateInput) {
+        console.log(`Attract: pressing ${button} (index ${buttonIndex}) via gameManager.simulateInput`);
+        window.EJS_emulator.gameManager.simulateInput(0, buttonIndex, 1);
+        setTimeout(() => {
+          window.EJS_emulator.gameManager.simulateInput(0, buttonIndex, 0);
+        }, 100);
+        return true;
+      }
+
+      // Method 2: Try EmulatorJS root simulateInput API
+      if (window.EJS_emulator?.simulateInput) {
+        console.log(`Attract: pressing ${button} (index ${buttonIndex}) via EJS_emulator.simulateInput`);
+        window.EJS_emulator.simulateInput(0, buttonIndex, 1); // player 0, button, pressed
+        setTimeout(() => {
+          window.EJS_emulator.simulateInput(0, buttonIndex, 0); // release
+        }, 100);
+        return true;
+      }
+
+      // Method 3: Try Module._simulate_input or similar
+      const Module = this.getModule();
+      if (Module?._simulate_input) {
+        console.log(`Attract: pressing ${button} (index ${buttonIndex}) via Module._simulate_input`);
+        Module._simulate_input(0, buttonIndex, 1);
+        setTimeout(() => {
+          Module._simulate_input(0, buttonIndex, 0);
+        }, 100);
+        return true;
+      }
+
+      // Method 4: Fall back to keyboard events on the emulator canvas
+      console.log(`Attract: No simulateInput API found, falling back to keyboard events`);
+      const keyMap = {
+        'a': { key: 'x', code: 'KeyX', keyCode: 88 },
+        'b': { key: 'z', code: 'KeyZ', keyCode: 90 },
+        'up': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+        'down': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
+        'left': { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
+        'right': { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
+        'start': { key: 'Enter', code: 'Enter', keyCode: 13 },
+        'select': { key: 'Shift', code: 'ShiftRight', keyCode: 16 }
+      };
+
+      const keyInfo = keyMap[button.toLowerCase()];
+      if (!keyInfo) {
+        return false;
+      }
+
+      // Try dispatching on the canvas element directly
+      const canvas = document.querySelector('#emulator-container canvas');
+      const target = canvas || document;
+
+      const keydownEvent = new KeyboardEvent('keydown', {
+        key: keyInfo.key,
+        code: keyInfo.code,
+        keyCode: keyInfo.keyCode,
+        which: keyInfo.keyCode,
+        bubbles: true,
+        cancelable: true
+      });
+      target.dispatchEvent(keydownEvent);
+
+      setTimeout(() => {
+        const keyupEvent = new KeyboardEvent('keyup', {
+          key: keyInfo.key,
+          code: keyInfo.code,
+          keyCode: keyInfo.keyCode,
+          which: keyInfo.keyCode,
+          bubbles: true,
+          cancelable: true
+        });
+        target.dispatchEvent(keyupEvent);
+      }, 100);
+
+      return true;
+    } catch (error) {
+      console.error('Error simulating key press:', error);
+      return false;
+    }
+  }
+
+  // Get a random button for attract mode
+  getRandomAttractButton() {
+    const buttons = ['a', 'b', 'up', 'down', 'left', 'right'];
+    return buttons[Math.floor(Math.random() * buttons.length)];
   }
 }
 

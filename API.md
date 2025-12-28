@@ -373,15 +373,6 @@ List all save states from MinIO storage.
       "location": "Pallet Town",
       "badgeCount": 2,
       "turnId": 123
-    },
-    {
-      "objectKey": "main-game/autosave-1706274896789.sav",
-      "size": 524288,
-      "lastModified": "2025-01-26T12:30:00.000Z",
-      "playerName": "Unknown",
-      "location": "Unknown",
-      "badgeCount": 0,
-      "turnId": null
     }
   ]
 }
@@ -436,7 +427,7 @@ Download a specific save state file.
 
 ### POST /api/saves/upload
 
-Upload a save state (auto-save).
+Upload a save state.
 
 **Request Body:**
 ```json
@@ -454,7 +445,7 @@ Upload a save state (auto-save).
 ```json
 {
   "success": true,
-  "saveUrl": "main-game/autosave-1706274896789.sav",
+  "saveUrl": "main-game/save-1706274896789.sav",
   "message": "Save state uploaded successfully"
 }
 ```
@@ -681,11 +672,6 @@ All error responses follow this format:
 ## MinIO Object Storage
 
 Save states are stored in MinIO with the following naming conventions:
-
-**Auto-saves:**
-```
-{sessionId}/autosave-{timestamp}.sav
-```
 
 **Turn-end saves:**
 ```

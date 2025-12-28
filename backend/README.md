@@ -9,7 +9,7 @@ The backend is a Node.js/Express application that provides:
 - **PostgreSQL Database**: Game turn history, kiosk registrations, and metadata
 - **MinIO Object Storage**: Save state blob storage (S3-compatible)
 - **Kiosk Registration**: Secure token-based registration with admin activation
-- **Auto-Save System**: Periodic save state storage with metadata
+- **Save State Storage**: Turn-end save state storage with metadata
 - **Smart Initialization**: Automatic database and MinIO setup on first run
 
 ## Architecture
@@ -248,16 +248,6 @@ const initialized = await saveStateStorage.initialize();
 // Connects to MinIO, creates bucket if needed
 ```
 
-**saveAutoSave(sessionId, saveData, metadata)**
-```javascript
-const saveUrl = await saveStateStorage.saveAutoSave(
-  'main-game',
-  base64SaveData,
-  { playerName: 'Ash', location: 'Pallet Town', badgeCount: 0 }
-);
-// Returns: 'main-game/autosave-1706274896789.sav'
-```
-
 **saveTurnSave(sessionId, turnId, saveData, metadata)**
 ```javascript
 const saveUrl = await saveStateStorage.saveTurnSave(
@@ -290,12 +280,6 @@ const saveData = await saveStateStorage.loadSpecificSave(
 ```
 
 ### Object Naming Convention
-
-**Auto-saves:**
-```
-{sessionId}/autosave-{timestamp}.sav
-```
-Example: `main-game/autosave-1706274896789.sav`
 
 **Turn-end saves:**
 ```
@@ -870,7 +854,7 @@ pool: {
 ### MinIO Performance
 
 **Concurrent Uploads:**
-- Auto-saves and turn-end saves can happen simultaneously
+- Multiple turn-end saves can happen simultaneously
 - MinIO handles concurrent writes efficiently
 
 **Large Save States:**

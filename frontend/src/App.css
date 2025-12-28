@@ -19,8 +19,8 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(26, 26, 46, 0.95);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.4); /* More transparent to show game behind */
+  backdrop-filter: blur(2px); /* Lighter blur */
   z-index: 1000;
   display: flex;
   align-items: center;

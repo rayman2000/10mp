@@ -98,10 +98,9 @@ Enter the admin password (configured in backend `.env` as `ADMIN_PASSWORD`).
 - **Session Status**: Show if session is active
 
 **Save State Management:**
-- **List Save States**: View all auto-saves and turn-end saves
+- **List Save States**: View all turn-end saves
 - **Save Metadata**: See player name, location, badges for each save
 - **Restore Save**: Click to load a previous save point
-- **Auto-saves**: Saves created every N minutes during gameplay
 - **Turn-end Saves**: Saves created when a player's turn completes
 
 **Quick Stats:**
@@ -145,7 +144,6 @@ Enter the admin password (configured in backend `.env` as `ADMIN_PASSWORD`).
 5. Game loads from that save point on next session start
 
 **Save State Types:**
-- **auto-save-{timestamp}.sav**: Periodic auto-saves during gameplay
 - **turn-{turnId}.sav**: Saves from completed turns
 
 ## Project Structure
@@ -374,7 +372,7 @@ location / {
 
 **Save States:**
 - [ ] Save states list loads
-- [ ] Auto-saves and turn-end saves both appear
+- [ ] Turn-end saves appear
 - [ ] Metadata displays correctly (player, location, badges)
 - [ ] Restore button triggers action (when implemented)
 

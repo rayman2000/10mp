@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { gameApi } from '../services/api';
 import './MessageInput.css';
+import badgeSvg from '../badge.svg';
 
 const MessageInput = ({ player, pendingTurnData, onMessageSubmit }) => {
   const [message, setMessage] = useState('');
@@ -78,6 +79,11 @@ const MessageInput = ({ player, pendingTurnData, onMessageSubmit }) => {
             {isSubmitting ? 'Saving...' : 'Submit & Pass Turn'}
           </button>
         </form>
+      </div>
+
+      <div className="badge-section">
+        <div className="badge-banner">Scan to get your badge!</div>
+        <img src={badgeSvg} alt="Player Badge" className="badge-image" />
       </div>
     </div>
   );

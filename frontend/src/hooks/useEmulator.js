@@ -45,7 +45,7 @@ export const useEmulator = (config = {}, approved = false) => {
 
     return () => {
       mounted = false;
-      // Emulator stays alive - cleanup only stops auto-save
+      // Emulator cleanup
       if (emulatorRef.current) {
         emulatorRef.current.destroy();
       }
@@ -96,12 +96,6 @@ export const useEmulator = (config = {}, approved = false) => {
     return null;
   }, []);
 
-  const setAutoSaveCallback = useCallback((callback) => {
-    if (emulatorRef.current) {
-      emulatorRef.current.setAutoSaveCallback(callback);
-    }
-  }, []);
-
   // Debug function to test memory access - call from browser console
   const debugMemory = useCallback(() => {
     if (emulatorRef.current) {
@@ -109,6 +103,24 @@ export const useEmulator = (config = {}, approved = false) => {
     }
     console.log('Emulator not initialized');
     return null;
+  }, []);
+
+  // Simulate a button press (for attract mode)
+  const simulateKeyPress = useCallback((button) => {
+    if (emulatorRef.current) {
+      return emulatorRef.current.simulateKeyPress(button);
+    }
+    return false;
+  }, []);
+
+  // Get a random button for attract mode
+  const getRandomAttractButton = useCallback(() => {
+    if (emulatorRef.current) {
+      return emulatorRef.current.getRandomAttractButton();
+    }
+    // Fallback if emulator not ready
+    const buttons = ['a', 'b', 'up', 'down', 'left', 'right'];
+    return buttons[Math.floor(Math.random() * buttons.length)];
   }, []);
 
   // Expose debug function globally for easy console access
@@ -139,7 +151,8 @@ export const useEmulator = (config = {}, approved = false) => {
     saveGame,
     loadGame,
     scrapeData,
-    setAutoSaveCallback,
-    debugMemory
+    debugMemory,
+    simulateKeyPress,
+    getRandomAttractButton
   };
 };

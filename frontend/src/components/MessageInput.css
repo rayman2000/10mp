@@ -4,7 +4,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(45deg, #4a5568 0%, #2d3748 50%, #1a202c 100%);
+  gap: 40px;
+  background: transparent; /* Let emulator show through */
   color: #f7fafc;
   font-family: monospace, 'Courier New', serif;
   font-weight: bold;
@@ -12,7 +13,7 @@
 
 .message-container {
   text-align: center;
-  max-width: 1000px;
+  max-width: 700px;
   padding: 0;
   background: #f7fafc;
   border: 6px solid #2d3748;
@@ -110,7 +111,45 @@
 
 .message-form button:active {
   transform: translate(2px, 2px);
-  box-shadow: 
+  box-shadow:
     inset 1px 1px 0px #38a169,
     inset -1px -1px 0px #276749;
+}
+
+/* Badge section - standalone panel to the right */
+.badge-section {
+  padding: 42px;
+  background: linear-gradient(180deg, #9b4b4b 0%, #7a3a3a 100%);
+  border: 6px solid #5c2c2c;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  box-shadow:
+    inset 2px 2px 0px #b35959,
+    inset -2px -2px 0px #6b3030,
+    4px 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.badge-banner {
+  font-size: 32px;
+  font-weight: bold;
+  color: #f5e6d3;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 3px 3px 0px #5c2c2c;
+  text-align: center;
+}
+
+.badge-image {
+  width: 280px;
+  height: 280px;
+  border: 5px solid #f5e6d3;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 16px;
+  box-shadow:
+    inset 2px 2px 0px #ffffff,
+    4px 4px 8px rgba(0, 0, 0, 0.3);
 }

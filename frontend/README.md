@@ -9,7 +9,7 @@ The frontend is a React 18 application that provides:
 - **Turn-Based Gameplay**: 10-minute turns with automatic timer and save states
 - **Kiosk Registration**: Secure token-based connection to backend with admin approval
 - **Memory Scraping**: Real-time extraction of game data (location, badges, party, etc.)
-- **Auto-Save System**: Periodic save state uploads to backend
+- **Save States**: Save state capture at turn end and restore on turn start
 
 ## Architecture
 
@@ -61,17 +61,8 @@ await emulator.initialize();
 - `saveState()` - Creates save state (Base64 encoded)
 - `loadState(saveData)` - Restores save state
 - `scrapeGameData()` - Extracts Pokemon Fire Red memory data
-- `setAutoSaveCallback(callback)` - Register auto-save handler
+- `simulateKeyPress(button)` - Simulate button press (for attract mode)
 - `destroy()` - Cleanup emulator instance
-
-**Auto-Save System:**
-```javascript
-emulator.setAutoSaveCallback(async (saveData) => {
-  await sessionApi.saveGameState(sessionId, saveData, gameData);
-});
-```
-
-Auto-saves trigger every N minutes (configurable via backend config).
 
 ### Save State Implementation
 
@@ -180,7 +171,8 @@ const {
   saveGame,      // Create save state
   loadGame,      // Load save state
   scrapeData,    // Extract game data
-  setAutoSaveCallback
+  simulateKeyPress,    // Simulate button press
+  getRandomAttractButton  // Get random button for attract mode
 } = useEmulator(config);
 ```
 
@@ -198,10 +190,9 @@ const {
 Main gameplay component that:
 - Renders emulator in full-screen
 - Implements 10-minute countdown timer
-- Scrapes game data every 60 seconds
-- Uploads auto-saves to backend
-- Handles turn end (Escape key or timeout)
-- Saves turn data to backend
+- Runs attract mode (random inputs) when not active
+- Handles turn end (timeout)
+- Saves turn data to backend at turn end
 
 **Props:**
 - `player` - Current player name
@@ -288,7 +279,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 **Config API:**
 ```javascript
 await configApi.getConfig();
-// Returns turn duration, auto-save interval, session ID, admin password
+// Returns turn duration, session ID, admin password
 ```
 
 **Session API:**
@@ -409,12 +400,11 @@ window.EJS_emulator.Module.HEAP8  // View memory
 - [ ] Polling for activation status
 - [ ] Activation by admin connects kiosk
 - [ ] Player name entry
+- [ ] Attract mode runs while waiting for player
 - [ ] Game loads and is playable
 - [ ] 10-minute timer counts down
-- [ ] Auto-save triggers every N minutes
-- [ ] Memory scraping logs data to console
-- [ ] Escape key ends turn
-- [ ] Turn data saved to backend
+- [ ] Turn data saved to backend at turn end
+- [ ] Save state restored for next player
 - [ ] Next player can connect
 
 **Browser Testing:**
@@ -425,7 +415,7 @@ window.EJS_emulator.Module.HEAP8  // View memory
 **Performance:**
 - Monitor memory usage during long sessions
 - Check for memory leaks on unmount
-- Verify auto-save doesn't cause lag spikes
+- Verify attract mode doesn't cause issues
 
 ## Deployment
 

@@ -15,7 +15,9 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     startGame,
     saveGame,
     loadGame,
-    scrapeData
+    scrapeData,
+    simulateKeyPress,
+    getRandomAttractButton
   } = useEmulator(config, approved);
 
   console.log('GameScreen render:', { isLoaded, isRunning, error });
@@ -72,53 +74,64 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
     }
   }, [player, turnStartTime, config, saveGame, scrapeData, onTurnDataCaptured]);
 
-  // Track if we've already loaded the save to prevent re-loading during this turn
-  const saveLoadAttemptedRef = useRef(false);
+  // Track if we've loaded the save for initial attract mode
+  const initialSaveLoadedRef = useRef(false);
+  // Track if we've loaded the save for this turn
+  const turnSaveLoadedRef = useRef(false);
 
-  // Load prefetched save data when emulator is ready or when becoming active for new turn
-  useEffect(() => {
-    // Need emulator loaded, turn to be active, and not already attempted this turn
-    if (!isLoaded || !isActive || saveLoadAttemptedRef.current) return;
+  // Helper function to load save data with retries
+  const attemptLoadSave = async (reason) => {
+    if (!prefetchedSaveData) {
+      console.log(`No prefetched save data for ${reason} - starting fresh game`);
+      return;
+    }
 
-    console.log('Loading save for turn...', {
-      hasPrefetchedData: !!prefetchedSaveData,
-      dataLength: prefetchedSaveData?.length || 0
-    });
+    console.log(`Loading save for ${reason} (${prefetchedSaveData.length} chars)...`);
 
-    saveLoadAttemptedRef.current = true;
-    startGame();
+    // Try loading with increasing delays (emulator might need time to fully initialize)
+    const delays = [500, 1000, 2000];
+    for (let i = 0; i < delays.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, delays[i]));
 
-    // Load the prefetched save data after emulator is fully running
-    // Use multiple attempts with increasing delays for reliability
-    const attemptLoad = async () => {
-      if (!prefetchedSaveData) {
-        console.log('No prefetched save data - starting fresh game');
+      console.log(`Load attempt ${i + 1}/${delays.length}...`);
+      const loaded = loadGame(prefetchedSaveData);
+
+      if (loaded) {
+        console.log(`✅ Save state loaded successfully on attempt ${i + 1}!`);
         return;
       }
 
-      console.log(`Attempting to load save data (${prefetchedSaveData.length} chars)...`);
+      console.warn(`Load attempt ${i + 1} failed, ${i < delays.length - 1 ? 'retrying...' : 'giving up'}`);
+    }
 
-      // Try loading with increasing delays (emulator might need time to fully initialize)
-      const delays = [500, 1000, 2000];
-      for (let i = 0; i < delays.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, delays[i]));
+    console.error('❌ Failed to load save state after all attempts');
+  };
 
-        console.log(`Load attempt ${i + 1}/${delays.length}...`);
-        const loaded = loadGame(prefetchedSaveData);
+  // Load save data on initial emulator load (for attract mode)
+  useEffect(() => {
+    if (!isLoaded || initialSaveLoadedRef.current) return;
 
-        if (loaded) {
-          console.log(`✅ Save state loaded successfully on attempt ${i + 1}!`);
-          return;
-        }
+    console.log('Emulator loaded - loading save for attract mode');
+    initialSaveLoadedRef.current = true;
+    startGame();
+    attemptLoadSave('attract mode');
+  }, [isLoaded, startGame, loadGame, prefetchedSaveData]);
 
-        console.warn(`Load attempt ${i + 1} failed, ${i < delays.length - 1 ? 'retrying...' : 'giving up'}`);
-      }
+  // Reload save data when turn becomes active (to discard attract mode changes)
+  useEffect(() => {
+    if (!isLoaded || !isActive || turnSaveLoadedRef.current) return;
 
-      console.error('❌ Failed to load save state after all attempts');
-    };
+    console.log('Turn starting - reloading save to discard attract mode changes');
+    turnSaveLoadedRef.current = true;
+    attemptLoadSave('turn start');
+  }, [isLoaded, isActive, loadGame, prefetchedSaveData]);
 
-    attemptLoad();
-  }, [isLoaded, isActive, startGame, loadGame, prefetchedSaveData]);
+  // Reset turn save flag when turn ends
+  useEffect(() => {
+    if (!isActive) {
+      turnSaveLoadedRef.current = false;
+    }
+  }, [isActive]);
 
   // Focus emulator when becoming active or when emulator becomes ready
   useEffect(() => {
@@ -180,7 +193,6 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
         timerRef.current = null;
       }
       timerStartedRef.current = false;
-      saveLoadAttemptedRef.current = false; // Reset so next turn can load new save
       setTurnStartTime(null); // Reset for next turn
       return;
     }
@@ -224,6 +236,66 @@ const GameScreen = ({ player, isActive = true, approved = false, onGameEnd, onTu
       }
     };
   }, [isActive]); // Only depends on isActive!
+
+  // Attract mode: send random inputs when not active (demo mode)
+  useEffect(() => {
+    // Only run attract mode when emulator is running but turn is not active
+    // Need isRunning (not just isLoaded) because gameManager.simulateInput requires game to be started
+    if (!isRunning || isActive) {
+      return;
+    }
+
+    console.log('Attract mode effect triggered, waiting for gameManager to be ready...');
+
+    // Wait for gameManager to be fully available before starting attract mode
+    let attractInterval = null;
+    let checkInterval = null;
+    let started = false;
+
+    const startAttractMode = () => {
+      if (started) return;
+      started = true;
+
+      console.log('Starting attract mode - random inputs every 500ms');
+      console.log('EJS_emulator available:', !!window.EJS_emulator);
+      console.log('gameManager available:', !!window.EJS_emulator?.gameManager);
+      console.log('simulateInput available:', !!window.EJS_emulator?.gameManager?.simulateInput);
+
+      attractInterval = setInterval(() => {
+        const button = getRandomAttractButton();
+        const success = simulateKeyPress(button);
+        if (!success) {
+          console.log('simulateKeyPress failed for button:', button);
+        }
+      }, 500);
+    };
+
+    // Check if gameManager.simulateInput is available
+    const checkReady = () => {
+      if (window.EJS_emulator?.gameManager?.simulateInput) {
+        console.log('gameManager.simulateInput is ready!');
+        if (checkInterval) {
+          clearInterval(checkInterval);
+          checkInterval = null;
+        }
+        startAttractMode();
+      }
+    };
+
+    // Check immediately
+    checkReady();
+
+    // If not ready, keep checking every 500ms
+    if (!started) {
+      checkInterval = setInterval(checkReady, 500);
+    }
+
+    return () => {
+      console.log('Stopping attract mode');
+      if (checkInterval) clearInterval(checkInterval);
+      if (attractInterval) clearInterval(attractInterval);
+    };
+  }, [isRunning, isActive, simulateKeyPress, getRandomAttractButton]);
 
   // Update visible countdown timer every second
   useEffect(() => {
