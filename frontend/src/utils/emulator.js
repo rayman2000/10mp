@@ -78,6 +78,7 @@ class EmulatorManager {
         'rewind': false, // Disable rewind to save memory and CPU
         'ffw-ratio': 1, // Disable fast forward (1x speed)
         'ff-ratio': 1, // Disable fast forward (1x speed)
+        'fps': 'disabled', // Hide FPS counter
       };
       
       // Debug callbacks with better error handling

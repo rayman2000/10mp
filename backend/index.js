@@ -843,21 +843,29 @@ app.get('/api/game-turns/:id', async (req, res) => {
 
 app.get('/api/stats', async (req, res) => {
   try {
-    const totalTurns = await GameTurn.count();
+    // Count only valid (non-invalidated) turns
+    const totalTurns = await GameTurn.count({
+      where: { invalidatedAt: null }
+    });
     const uniquePlayers = await GameTurn.count({
       distinct: true,
-      col: 'playerName'
+      col: 'playerName',
+      where: { invalidatedAt: null }
     });
-    
+
+    // Get latest valid turn
     const latestTurn = await GameTurn.findOne({
+      where: { invalidatedAt: null },
       order: [['turnEndedAt', 'DESC']]
     });
 
+    // Only count valid turns for top players
     const topPlayers = await sequelize.query(`
       SELECT player_name, COUNT(*) as turn_count, MAX(badge_count) as max_badges
-      FROM game_turns 
-      GROUP BY player_name 
-      ORDER BY turn_count DESC, max_badges DESC 
+      FROM game_turns
+      WHERE invalidated_at IS NULL
+      GROUP BY player_name
+      ORDER BY turn_count DESC, max_badges DESC
       LIMIT 10
     `, {
       type: sequelize.QueryTypes.SELECT

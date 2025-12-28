@@ -12,12 +12,12 @@
 
 .message-container {
   text-align: center;
-  max-width: 580px;
+  max-width: 1000px;
   padding: 0;
   background: #f7fafc;
-  border: 4px solid #2d3748;
-  border-radius: 8px;
-  box-shadow: 
+  border: 6px solid #2d3748;
+  border-radius: 16px;
+  box-shadow:
     inset 2px 2px 0px #ffffff,
     inset -2px -2px 0px #a0aec0,
     4px 4px 8px rgba(0, 0, 0, 0.3);
@@ -26,42 +26,42 @@
 
 .message-container h2 {
   margin: 0;
-  padding: 20px 24px 12px;
+  padding: 42px 54px 24px;
   color: #2d3748;
-  font-size: 18px;
-  background: #e2e8f0;
-  border-bottom: 2px solid #cbd5e0;
-}
-
-.message-container p {
-  margin: 0;
-  padding: 12px 24px 20px;
-  font-size: 14px;
-  color: #4a5568;
+  font-size: 42px;
   background: #e2e8f0;
   border-bottom: 3px solid #cbd5e0;
 }
 
+.message-container p {
+  margin: 0;
+  padding: 24px 54px 42px;
+  font-size: 28px;
+  color: #4a5568;
+  background: #e2e8f0;
+  border-bottom: 5px solid #cbd5e0;
+}
+
 .message-form {
-  padding: 24px;
+  padding: 54px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 30px;
   background: #f7fafc;
 }
 
 .message-form textarea {
-  padding: 16px;
-  font-size: 14px;
+  padding: 24px 30px;
+  font-size: 28px;
   font-family: monospace;
   font-weight: bold;
-  border: 3px solid #4a5568;
-  border-radius: 4px;
+  border: 5px solid #4a5568;
+  border-radius: 8px;
   background: #ffffff;
   color: #1a202c;
   resize: vertical;
-  min-height: 100px;
-  box-shadow: 
+  min-height: 150px;
+  box-shadow:
     inset 2px 2px 0px #f7fafc,
     inset -2px -2px 0px #cbd5e0;
 }
@@ -77,23 +77,23 @@
 
 .char-counter {
   text-align: right;
-  font-size: 12px;
+  font-size: 22px;
   color: #718096;
-  margin-top: -8px;
+  margin-top: -12px;
 }
 
 .message-form button {
-  padding: 12px 24px;
-  font-size: 16px;
+  padding: 24px 48px;
+  font-size: 30px;
   font-weight: bold;
   font-family: monospace;
-  border: 3px solid #2d3748;
-  border-radius: 4px;
+  border: 5px solid #2d3748;
+  border-radius: 8px;
   background: #38a169;
   color: #f7fafc;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: 
+  box-shadow:
     inset 2px 2px 0px #48bb78,
     inset -2px -2px 0px #2f855a,
     2px 2px 4px rgba(0, 0, 0, 0.2);

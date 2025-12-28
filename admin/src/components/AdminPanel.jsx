@@ -20,6 +20,7 @@ const AdminPanel = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [message, setMessage] = useState('');
   const [selectedTurn, setSelectedTurn] = useState(null);
+  const [hideInvalidated, setHideInvalidated] = useState(false);
 
   // ROM management state
   const [roms, setRoms] = useState([]);
@@ -27,15 +28,20 @@ const AdminPanel = () => {
   const romFileInputRef = useRef(null);
 
   // Fetch stats, game turns, pending kiosks, and ROMs
-  const fetchData = async () => {
+  const fetchData = async (includeInvalidatedOverride = null) => {
     try {
       setLoading(true);
       setTurnsPage(0);
 
+      // Use override if provided, otherwise use current state
+      const includeInvalidated = includeInvalidatedOverride !== null
+        ? !includeInvalidatedOverride
+        : !hideInvalidated;
+
       const [statsData, kiosksData, turnsData, romsData] = await Promise.all([
         gameApi.getStats(),
         kioskApi.getPendingKiosks('all'),
-        gameApi.getGameTurns({ limit: PAGE_SIZE, offset: 0 }),
+        gameApi.getGameTurns({ limit: PAGE_SIZE, offset: 0, includeInvalidated: includeInvalidated.toString() }),
         romApi.listRoms().catch(() => ({ roms: [] }))
       ]);
 
@@ -60,7 +66,11 @@ const AdminPanel = () => {
       const nextPage = turnsPage + 1;
       const offset = nextPage * PAGE_SIZE;
 
-      const turnsData = await gameApi.getGameTurns({ limit: PAGE_SIZE, offset });
+      const turnsData = await gameApi.getGameTurns({
+        limit: PAGE_SIZE,
+        offset,
+        includeInvalidated: (!hideInvalidated).toString()
+      });
 
       setGameTurns(prev => [...prev, ...(turnsData.data || [])]);
       setTurnsPage(nextPage);
@@ -616,7 +626,20 @@ const AdminPanel = () => {
 
         {/* Game Turns History */}
         <div className="admin-card admin-card-full">
-          <h2>Game Turns ({turnsTotal > 0 ? `${gameTurns.length} of ${turnsTotal}` : gameTurns.length})</h2>
+          <div className="card-header-with-toggle">
+            <h2>Game Turns ({turnsTotal > 0 ? `${gameTurns.length} of ${turnsTotal}` : gameTurns.length})</h2>
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={hideInvalidated}
+                onChange={(e) => {
+                  setHideInvalidated(e.target.checked);
+                  fetchData(e.target.checked);
+                }}
+              />
+              Hide invalidated turns
+            </label>
+          </div>
           <div className="saves-list">
             {gameTurns.length > 0 ? (
               <>

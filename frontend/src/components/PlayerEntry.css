@@ -1,4 +1,5 @@
 .player-entry {
+  position: relative;
   width: 100vw;
   height: 100vh;
   display: flex;
@@ -157,4 +158,51 @@
 @keyframes pulse-loading {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+/* Play now arrow */
+.play-now-arrow {
+  position: absolute;
+  left: 30px;
+  top: 33%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  background: linear-gradient(180deg, #9b4b4b 0%, #7a3a3a 100%);
+  padding: 30px 50px;
+  border-radius: 20px;
+  border: 6px solid #5c2c2c;
+  box-shadow:
+    inset 2px 2px 0px #b35959,
+    inset -2px -2px 0px #6b3030,
+    6px 6px 20px rgba(0, 0, 0, 0.4);
+  animation: blink-arrow 1s ease-in-out infinite;
+}
+
+.arrow-text {
+  font-size: 72px;
+  font-weight: bold;
+  color: #f5e6d3;
+  text-shadow: 4px 4px 0px #5c2c2c;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  white-space: nowrap;
+}
+
+.arrow-icon {
+  font-size: 100px;
+  color: #f5e6d3;
+  text-shadow: 4px 4px 0px #5c2c2c;
+}
+
+@keyframes blink-arrow {
+  0%, 100% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translateY(-50%) translateX(15px);
+  }
 }
