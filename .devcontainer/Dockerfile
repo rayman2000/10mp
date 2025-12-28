@@ -1,7 +1,7 @@
-FROM node:25-alpine
+FROM node:25-bookworm
 
 # Install essential development tools
-RUN apk add --no-cache \
+RUN apt update && apt install -y \
     git \
     curl \
     bash \
