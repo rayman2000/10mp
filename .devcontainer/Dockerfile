@@ -15,5 +15,7 @@ WORKDIR /workspace
 # Expose common ports
 EXPOSE 3000 3001 3002 5432 9000 9001
 
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
 # Keep container running
 CMD ["sleep", "infinity"]

@@ -91,6 +91,60 @@ export const saveApi = {
       console.error('Failed to get latest save:', error);
       throw error;
     }
+  },
+
+  async downloadSave(objectKey) {
+    try {
+      const encodedKey = encodeURIComponent(objectKey);
+      const response = await api.get(`/api/saves/${encodedKey}/download`, {
+        responseType: 'blob'
+      });
+
+      // Create download link
+      const url = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = objectKey;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      return true;
+    } catch (error) {
+      console.error('Failed to download save:', error);
+      throw error;
+    }
+  },
+
+  async uploadSave(file, metadata = {}) {
+    try {
+      // Read file as base64
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const response = await api.post('/api/admin/upload-save', {
+        filename: file.name,
+        data: base64Data,
+        playerName: metadata.playerName || 'Admin Upload',
+        location: metadata.location || 'Uploaded',
+        badgeCount: metadata.badgeCount || 0
+      }, {
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('Failed to upload save:', error);
+      throw error;
+    }
   }
 };
 
