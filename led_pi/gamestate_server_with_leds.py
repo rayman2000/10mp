@@ -99,45 +99,157 @@ TYPE_COLORS = {
 
 # Pokemon name to type mapping (Kanto 151)
 POKEMON_TYPES = {
-    # Starters
-    "bulbasaur": "grass", "ivysaur": "grass", "venusaur": "grass",
-    "charmander": "fire", "charmeleon": "fire", "charizard": "fire",
-    "squirtle": "water", "wartortle": "water", "blastoise": "water",
-
-    # Normal/Flying
-    "pidgey": "normal", "pidgeotto": "normal", "pidgeot": "normal",
-    "rattata": "normal", "raticate": "normal",
-    "spearow": "normal", "fearow": "normal",
-
-    # Bug
-    "caterpie": "bug", "metapod": "bug", "butterfree": "bug",
-    "weedle": "bug", "kakuna": "bug", "beedrill": "bug",
-    "paras": "bug", "parasect": "bug", "venonat": "bug", "venomoth": "bug",
-
-    # Poison
-    "ekans": "poison", "arbok": "poison",
-    "nidoran-f": "poison", "nidorina": "poison", "nidoqueen": "poison",
-    "nidoran-m": "poison", "nidorino": "poison", "nidoking": "poison",
-    "zubat": "poison", "golbat": "poison",
-    "grimer": "poison", "muk": "poison",
-
-    # Electric
-    "pikachu": "electric", "raichu": "electric",
-    "magnemite": "electric", "magneton": "electric",
-    "voltorb": "electric", "electrode": "electric",
-
-    # Fire
-    "vulpix": "fire", "ninetales": "fire",
-    "growlithe": "fire", "arcanine": "fire",
-
-    # Water
-    "psyduck": "water", "golduck": "water",
-    "poliwag": "water", "poliwhirl": "water", "poliwrath": "water",
-    "tentacool": "water", "tentacruel": "water",
-    "slowpoke": "water", "slowbro": "water",
-    "magikarp": "water", "gyarados": "water",
-
-    # Add more as needed...
+    "bulbasaur": "grass",
+    "ivysaur": "grass",
+    "venusaur": "grass",
+    "charmander": "fire",
+    "charmeleon": "fire",
+    "charizard": "fire",
+    "squirtle": "water",
+    "wartortle": "water",
+    "blastoise": "water",
+    "caterpie": "bug",
+    "metapod": "bug",
+    "butterfree": "bug",
+    "weedle": "bug",
+    "kakuna": "bug",
+    "beedrill": "bug",
+    "pidgey": "normal",
+    "pidgeotto": "normal",
+    "pidgeot": "normal",
+    "rattata": "normal",
+    "raticate": "normal",
+    "spearow": "normal",
+    "fearow": "normal",
+    "ekans": "poison",
+    "arbok": "poison",
+    "pikachu": "electric",
+    "raichu": "electric",
+    "sandshrew": "ground",
+    "sandslash": "ground",
+    "nidoran-f": "poison",
+    "nidorina": "poison",
+    "nidoqueen": "poison",
+    "nidoran-m": "poison",
+    "nidorino": "poison",
+    "nidoking": "poison",
+    "clefairy": "normal",
+    "clefable": "normal",
+    "vulpix": "fire",
+    "ninetales": "fire",
+    "jigglypuff": "normal",
+    "wigglytuff": "normal",
+    "zubat": "poison",
+    "golbat": "poison",
+    "oddish": "grass",
+    "gloom": "grass",
+    "vileplume": "grass",
+    "paras": "bug",
+    "parasect": "bug",
+    "venonat": "bug",
+    "venomoth": "bug",
+    "diglett": "ground",
+    "dugtrio": "ground",
+    "meowth": "normal",
+    "persian": "normal",
+    "psyduck": "water",
+    "golduck": "water",
+    "mankey": "fighting",
+    "primeape": "fighting",
+    "growlithe": "fire",
+    "arcanine": "fire",
+    "poliwag": "water",
+    "poliwhirl": "water",
+    "poliwrath": "water",
+    "abra": "psychic",
+    "kadabra": "psychic",
+    "alakazam": "psychic",
+    "machop": "fighting",
+    "machoke": "fighting",
+    "machamp": "fighting",
+    "bellsprout": "grass",
+    "weepinbell": "grass",
+    "victreebel": "grass",
+    "tentacool": "water",
+    "tentacruel": "water",
+    "geodude": "rock",
+    "graveler": "rock",
+    "golem": "rock",
+    "ponyta": "fire",
+    "rapidash": "fire",
+    "slowpoke": "water",
+    "slowbro": "water",
+    "magnemite": "electric",
+    "magneton": "electric",
+    "farfetchd": "normal",
+    "doduo": "normal",
+    "dodrio": "normal",
+    "seel": "water",
+    "dewgong": "water",
+    "grimer": "poison",
+    "muk": "poison",
+    "shellder": "water",
+    "cloyster": "water",
+    "gastly": "ghost",
+    "haunter": "ghost",
+    "gengar": "ghost",
+    "onix": "rock",
+    "drowzee": "psychic",
+    "hypno": "psychic",
+    "krabby": "water",
+    "kingler": "water",
+    "voltorb": "electric",
+    "electrode": "electric",
+    "exeggcute": "grass",
+    "exeggutor": "grass",
+    "cubone": "ground",
+    "marowak": "ground",
+    "hitmonlee": "fighting",
+    "hitmonchan": "fighting",
+    "lickitung": "normal",
+    "koffing": "poison",
+    "weezing": "poison",
+    "rhyhorn": "ground",
+    "rhydon": "ground",
+    "chansey": "normal",
+    "tangela": "grass",
+    "kangaskhan": "normal",
+    "horsea": "water",
+    "seadra": "water",
+    "goldeen": "water",
+    "seaking": "water",
+    "staryu": "water",
+    "starmie": "water",
+    "mrmime": "psychic",
+    "scyther": "bug",
+    "jynx": "ice",
+    "electabuzz": "electric",
+    "magmar": "fire",
+    "pinsir": "bug",
+    "tauros": "normal",
+    "magikarp": "water",
+    "gyarados": "water",
+    "lapras": "water",
+    "ditto": "normal",
+    "eevee": "normal",
+    "vaporeon": "water",
+    "jolteon": "electric",
+    "flareon": "fire",
+    "porygon": "normal",
+    "omanyte": "rock",
+    "omastar": "rock",
+    "kabuto": "rock",
+    "kabutops": "rock",
+    "aerodactyl": "rock",
+    "snorlax": "normal",
+    "articuno": "ice",
+    "zapdos": "electric",
+    "moltres": "fire",
+    "dratini": "dragon",
+    "dragonair": "dragon",
+    "dragonite": "dragon",
+    "mewtwo": "psychic",
+    "mew": "psychic"
 }
 
 # Location color schemes [Primary, Secondary, Accent]
@@ -165,11 +277,43 @@ LOCATION_COLORS = {
     "route mountain":  [(160, 144, 112), (128, 112, 88),  (88, 160, 88)],
     "route water":     [(64, 128, 240),  (104, 176, 248), (224, 240, 255)],
 
-    # Dungeons
-    "viridian forest": [(40, 88, 48),    (24, 56, 32),    (120, 160, 80)],
-    "mt moon":         [(112, 96, 80),   (64, 56, 48),    (144, 128, 112)],
-    "rock tunnel":     [(144, 128, 96),  (32, 32, 32),    (176, 160, 128)],
-    "pokemon tower":   [(104, 88, 128),  (72, 64, 96),    (160, 144, 192)],
+    # --- DUNGEONS & INTERIORS ---
+    # Deep forest green, shadow green, filtered light
+    "viridian forest": [(48, 96, 56),    (24, 56, 32),    (136, 184, 104)],
+    # Cave brown, dark shadow, rocky beige
+    "mt moon":         [(120, 104, 88),  (64, 56, 48),    (168, 152, 128)],
+    # Darker brown, pitch black darkness, flash light halo
+    "rock tunnel":     [(136, 112, 88),  (32, 24, 24),    (192, 176, 144)],
+    # Tower purple/wood, fog grey, ghost aura
+    "pokemon tower":   [(112, 96, 144),  (80, 64, 104),   (176, 160, 192)],
+    # Dirt brown, tunnel shadow, ladder wood
+    "diglett's cave":  [(152, 128, 96),  (80, 64, 48),    (184, 160, 120)],
+    # Savanna yellow/green, marsh water, wood
+    "safari zone":     [(144, 192, 88),  (216, 208, 160), (64, 128, 160)],
+    # Industrial grey, electric yellow, caution stripe orange
+    "power plant":     [(88, 88, 96),    (240, 224, 64),  (216, 104, 48)],
+    # Ice blue, white snow, deep cave water
+    "seafoam islands": [(104, 192, 224), (248, 255, 255), (48, 80, 128)],
+    # Burnt burgundy, charred wood, broken grey
+    "pokemon mansion": [(160, 88, 88),   (88, 56, 56),    (144, 128, 128)],
+    # Victory brown, puzzle boulder grey, lava hint
+    "victory road":    [(128, 104, 80),  (160, 160, 168), (192, 168, 128)],
+    # Mysterious crystal blue, purple rock, water
+    "cerulean cave":   [(104, 96, 160),  (64, 56, 112),   (104, 200, 224)],
+    # Corporate blue carpet, warp pad red, metal grey
+    "silph co":        [(80, 112, 160),  (216, 64, 64),   (192, 192, 208)],
+
+    # --- SEVII ISLANDS ---
+    # Tropical sand, bright teal water, palm green
+    "one island":      [(248, 240, 176), (40, 168, 200),  (80, 192, 80)],
+    # Volcanic exterior, lava red, ash
+    "mt ember":        [(168, 80, 64),   (240, 128, 48),  (88, 40, 40)],
+    # Dense forest, berry colors, swampy green
+    "berry forest":    [(56, 128, 64),   (176, 80, 112),  (32, 64, 48)],
+    # Ice lore, light blue, ancient stone
+    "icefall cave":    [(176, 224, 248), (224, 240, 255), (112, 144, 176)],
+    # Ruins gold/tan, unown mystery blue, sand
+    "tanoby ruins":    [(200, 176, 128), (56, 104, 168),  (224, 208, 160)],
 }
 
 
