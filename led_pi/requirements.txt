@@ -5,3 +5,4 @@ adafruit-blinka
 adafruit-circuitpython-neopixel
 rpi_ws281x
 netifaces
+gpiozero
