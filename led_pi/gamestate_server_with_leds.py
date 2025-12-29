@@ -80,23 +80,56 @@ COLOR_RED = (255, 0, 0)
 
 # Pokemon Type Colors (Gen 3)
 TYPE_COLORS = {
-    "normal":   (168, 168, 120),
-    "fire":     (240, 128, 48),
-    "water":    (104, 144, 240),
-    "grass":    (120, 200, 80),
-    "electric": (248, 208, 48),
-    "ice":      (152, 216, 216),
-    "fighting": (192, 48, 40),
-    "poison":   (160, 64, 160),
-    "ground":   (224, 192, 104),
-    "flying":   (168, 144, 240),
-    "psychic":  (248, 88, 136),
-    "bug":      (168, 184, 32),
-    "rock":     (184, 160, 56),
-    "ghost":    (112, 88, 152),
-    "dragon":   (112, 56, 248),
-    "steel":    (184, 184, 208),
-    "dark":     (112, 88, 72),
+    # Normal: Warm beige/grey (dimmed to avoid looking pure white)
+    "normal":   (160, 160, 130),
+    
+    # Fire: Pure, sharp Orange-Red
+    "fire":     (255, 80, 0),
+    
+    # Water: Deep, rich Blue (removed green tint)
+    "water":    (0, 80, 255),
+    
+    # Grass: Pure Green (removed yellow tint)
+    "grass":    (0, 200, 20),
+    
+    # Electric: Pure Yellow (Red/Green mix, Blue dropped to 0)
+    "electric": (255, 220, 0),
+    
+    # Ice: Cyan/Turquoise (Distinct from Water)
+    "ice":      (0, 200, 200),
+    
+    # Fighting: Deep Crimson/Blood Red (Distinct from Fire)
+    "fighting": (200, 20, 20),
+    
+    # Poison: Deep Violet (Distinct from Psychic)
+    "poison":   (150, 0, 200),
+    
+    # Ground: Earthy Gold/Orange (Distinct from Rock)
+    "ground":   (180, 140, 20),
+    
+    # Flying: Light Sky Blue/Indigo
+    "flying":   (100, 120, 255),
+    
+    # Psychic: Hot Pink/Magenta
+    "psychic":  (255, 20, 150),
+    
+    # Bug: Lime Green (Distinct from Grass)
+    "bug":      (160, 220, 0),
+    
+    # Rock: Desaturated Brown/Grey
+    "rock":     (120, 100, 80),
+    
+    # Ghost: Dark Indigo/Purple
+    "ghost":    (80, 40, 180),
+    
+    # Dragon: Deep Royal Blue/Purple
+    "dragon":   (60, 0, 255),
+    
+    # Steel: Cool Blue-Grey (Distinct from Normal)
+    "steel":    (100, 140, 160),
+    
+    # Dark: Very dim Red/Brown (Hard on LEDs, used low intensity)
+    "dark":     (60, 40, 40),
 }
 
 # Pokemon name to type mapping (Kanto 151)
@@ -256,66 +289,86 @@ POKEMON_TYPES = {
 
 # Location color schemes [Primary, Secondary, Accent]
 LOCATION_COLORS = {
-    # Special locations
-    "pokecenter":      [(248, 56, 56),   (255, 255, 255), (255, 220, 100)],
-    "pokemart":        [(48, 128, 248),  (255, 255, 255), (100, 200, 100)],
-    "gym":             [(160, 160, 160), (220, 200, 100), (100, 80, 50)],
-    "unknown":         [(50, 50, 50),    (100, 100, 100), (200, 200, 200)],
+    # --- SPECIAL LOCATIONS ---
+    # Pokecenter: Pure Red, Dim Neutral White, Sharp Gold
+    "pokecenter":      [(255, 0, 0),     (128, 128, 128), (255, 180, 0)],
+    # Pokemart: Deep Blue, Dim White, Bright Lime
+    "pokemart":        [(0, 0, 255),     (128, 128, 128), (0, 255, 0)],
+    # Gym: Stone Grey, Deep Gold, Wood Brown
+    "gym":             [(80, 80, 80),    (255, 200, 0),   (139, 69, 19)],
+    "unknown":         [(30, 30, 30),    (80, 80, 80),    (150, 150, 150)],
 
-    # Towns/Cities
-    "pallet town":     [(112, 192, 80),  (232, 232, 232), (192, 160, 112)],
-    "viridian city":   [(80, 128, 88),   (120, 112, 80),  (56, 88, 56)],
-    "pewter city":     [(144, 144, 128), (112, 160, 112), (160, 128, 96)],
-    "cerulean city":   [(64, 160, 248),  (112, 224, 248), (248, 248, 248)],
-    "vermilion city":  [(232, 144, 56),  (240, 192, 80),  (104, 160, 240)],
-    "lavender town":   [(144, 112, 176), (88, 64, 112),   (192, 168, 208)],
-    "celadon city":    [(120, 200, 80),  (80, 160, 120),  (248, 248, 200)],
-    "fuchsia city":    [(224, 80, 144),  (112, 192, 80),  (160, 112, 64)],
-    "saffron city":    [(248, 208, 48),  (192, 192, 192), (248, 248, 248)],
-    "cinnabar island": [(224, 64, 64),   (128, 64, 64),   (240, 160, 128)],
+    # --- TOWNS/CITIES ---
+    # Pallet: Fresh bright green, Off-white, Wood
+    "pallet town":     [(0, 255, 50),    (150, 150, 150), (160, 100, 50)],
+    # Viridian: Deep Forest Green, Khaki, Dark Green
+    "viridian city":   [(0, 100, 0),     (150, 140, 50),  (0, 50, 0)],
+    # Pewter: Slate Grey, Pale Green, Rock Brown
+    "pewter city":     [(100, 100, 100), (80, 120, 80),   (100, 80, 60)],
+    # Cerulean: Deep Cyan, Sky Blue, White
+    "cerulean city":   [(0, 180, 255),   (0, 100, 255),   (180, 180, 180)],
+    # Vermilion: Vivid Orange, Yellow, Ocean Blue
+    "vermilion city":  [(255, 100, 0),   (255, 220, 0),   (0, 50, 255)],
+    # Lavender: Deep Purple, Dark Indigo, Mist
+    "lavender town":   [(150, 0, 200),   (60, 0, 100),    (160, 120, 200)],
+    # Celadon: Vibrant Lime, Urban Grey, Window Yellow
+    "celadon city":    [(50, 200, 0),    (100, 100, 100), (220, 220, 0)],
+    # Fuchsia: Hot Pink, Green, Beige
+    "fuchsia city":    [(255, 0, 150),   (0, 180, 0),     (180, 160, 100)],
+    # Saffron: Gold, Silver, White (reduced blue channel)
+    "saffron city":    [(255, 180, 0),   (150, 150, 150), (200, 200, 200)],
+    # Cinnabar: Red, Dark Red, Ash Grey
+    "cinnabar island": [(255, 30, 30),   (150, 0, 0),     (100, 100, 100)],
+    # Indigo: Marble White, Regal Blue, Gold
+    "indigo plateau":  [(180, 180, 180), (0, 0, 180),     (255, 200, 0)],
 
-    # Routes
-    "route generic":   [(120, 200, 80),  (224, 192, 96),  (56, 112, 48)],
-    "route mountain":  [(160, 144, 112), (128, 112, 88),  (88, 160, 88)],
-    "route water":     [(64, 128, 240),  (104, 176, 248), (224, 240, 255)],
+    # --- ROUTES ---
+    # Route: Standard Green, Dirt Path, Bushes
+    "route generic":   [(0, 180, 0),     (180, 140, 20),  (0, 80, 0)],
+    # Mountain: Brown, Grey, Green
+    "route mountain":  [(150, 100, 50),  (100, 100, 100), (0, 150, 0)],
+    # Water: Pure Blue, Cyan, White foam
+    "route water":     [(0, 0, 255),     (0, 150, 255),   (150, 200, 255)],
+    # Cycling: Bright Yellow, Blue, Asphalt
+    "cycling road":    [(255, 255, 0),   (0, 100, 255),   (80, 80, 80)],
 
-    # --- DUNGEONS & INTERIORS ---
-    # Deep forest green, shadow green, filtered light
-    "viridian forest": [(48, 96, 56),    (24, 56, 32),    (136, 184, 104)],
-    # Cave brown, dark shadow, rocky beige
-    "mt moon":         [(120, 104, 88),  (64, 56, 48),    (168, 152, 128)],
-    # Darker brown, pitch black darkness, flash light halo
-    "rock tunnel":     [(136, 112, 88),  (32, 24, 24),    (192, 176, 144)],
-    # Tower purple/wood, fog grey, ghost aura
-    "pokemon tower":   [(112, 96, 144),  (80, 64, 104),   (176, 160, 192)],
-    # Dirt brown, tunnel shadow, ladder wood
-    "diglett's cave":  [(152, 128, 96),  (80, 64, 48),    (184, 160, 120)],
-    # Savanna yellow/green, marsh water, wood
-    "safari zone":     [(144, 192, 88),  (216, 208, 160), (64, 128, 160)],
-    # Industrial grey, electric yellow, caution stripe orange
-    "power plant":     [(88, 88, 96),    (240, 224, 64),  (216, 104, 48)],
-    # Ice blue, white snow, deep cave water
-    "seafoam islands": [(104, 192, 224), (248, 255, 255), (48, 80, 128)],
-    # Burnt burgundy, charred wood, broken grey
-    "pokemon mansion": [(160, 88, 88),   (88, 56, 56),    (144, 128, 128)],
-    # Victory brown, puzzle boulder grey, lava hint
-    "victory road":    [(128, 104, 80),  (160, 160, 168), (192, 168, 128)],
-    # Mysterious crystal blue, purple rock, water
-    "cerulean cave":   [(104, 96, 160),  (64, 56, 112),   (104, 200, 224)],
-    # Corporate blue carpet, warp pad red, metal grey
-    "silph co":        [(80, 112, 160),  (216, 64, 64),   (192, 192, 208)],
+    # --- DUNGEONS ---
+    # Viridian Forest: Dark Green, Pitch Black, Light dappling
+    "viridian forest": [(0, 80, 0),      (0, 10, 0),      (50, 200, 50)],
+    # Mt Moon: Cave Grey, Shadow, Brown
+    "mt moon":         [(100, 100, 100), (30, 30, 30),    (150, 100, 50)],
+    # Rock Tunnel: Brown, Black, Flash Yellow
+    "rock tunnel":     [(120, 80, 20),   (0, 0, 0),       (255, 200, 50)],
+    # Pokemon Tower: Purple, Black, Ghostly Blue
+    "pokemon tower":   [(100, 0, 150),   (20, 0, 40),     (100, 100, 255)],
+    # Diglett: Earth Brown, Dark Brown, Wood
+    "diglett's cave":  [(160, 100, 0),   (60, 30, 0),     (200, 150, 50)],
+    # Safari: Jungle Green, Swamp Yellow, Water
+    "safari zone":     [(0, 180, 50),    (180, 180, 50),  (0, 100, 200)],
+    # Power Plant: Dark Grey, Electric Yellow, Hazard Orange
+    "power plant":     [(60, 60, 60),    (255, 255, 0),   (255, 100, 0)],
+    # Seafoam: Cyan, White (Ice), Deep Blue
+    "seafoam islands": [(0, 255, 255),   (180, 220, 255), (0, 0, 150)],
+    # Mansion: Burgundy, Charred Black, Grey
+    "pokemon mansion": [(150, 0, 50),    (50, 10, 10),    (100, 100, 100)],
+    # Victory Road: Brown, Boulder Grey, Lava Red
+    "victory road":    [(140, 80, 40),   (120, 120, 120), (200, 50, 0)],
+    # Cerulean Cave: Indigo, Dark Purple, Crystal Blue
+    "cerulean cave":   [(50, 0, 200),    (30, 0, 80),     (0, 200, 255)],
+    # Silph Co: Corp Blue, Warp Red, Metal
+    "silph co":        [(0, 50, 180),    (200, 0, 0),     (150, 150, 160)],
 
     # --- SEVII ISLANDS ---
-    # Tropical sand, bright teal water, palm green
-    "one island":      [(248, 240, 176), (40, 168, 200),  (80, 192, 80)],
-    # Volcanic exterior, lava red, ash
-    "mt ember":        [(168, 80, 64),   (240, 128, 48),  (88, 40, 40)],
-    # Dense forest, berry colors, swampy green
-    "berry forest":    [(56, 128, 64),   (176, 80, 112),  (32, 64, 48)],
-    # Ice lore, light blue, ancient stone
-    "icefall cave":    [(176, 224, 248), (224, 240, 255), (112, 144, 176)],
-    # Ruins gold/tan, unown mystery blue, sand
-    "tanoby ruins":    [(200, 176, 128), (56, 104, 168),  (224, 208, 160)],
+    # One Island: Sand Gold, Teal, Green
+    "one island":      [(255, 180, 50),  (0, 200, 200),   (0, 200, 0)],
+    # Mt Ember: Lava Red, Magma Orange, Ash
+    "mt ember":        [(200, 40, 0),    (255, 100, 0),   (60, 30, 30)],
+    # Berry Forest: Green, Berry Pink, Dark Green
+    "berry forest":    [(0, 150, 0),     (255, 20, 100),  (0, 50, 0)],
+    # Icefall: Ice Blue, White, Stone Blue
+    "icefall cave":    [(0, 180, 255),   (200, 200, 255), (80, 100, 150)],
+    # Tanoby: Tan, Mystery Blue, Sand
+    "tanoby ruins":    [(200, 150, 50),  (0, 50, 200),    (180, 180, 100)],
 }
 
 
@@ -531,7 +584,7 @@ class LedController:
             self.pixels[i] = COLOR_OFF
             self.pixels[LED_COUNT - 1 - i] = COLOR_OFF
             self.pixels.show()
-            time.sleep(0.02)
+            time.sleep(0.06)
 
         time.sleep(0.1)
 
@@ -540,7 +593,7 @@ class LedController:
             self.pixels[center + i] = c_new
             self.pixels[center - 1 - i] = c_new
             self.pixels.show()
-            time.sleep(0.03)
+            time.sleep(0.1)
 
         # Return to fighting with new type
         self.set_state("FIGHTING", {"type": new_type})
