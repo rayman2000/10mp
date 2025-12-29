@@ -101,7 +101,7 @@ TYPE_COLORS = {
 
 # Pokemon name to type mapping (Kanto 151)
 POKEMON_TYPES = {
-    "bulbasaur": "grass",
+    "bulbasaur": "grass", 
     "ivysaur": "grass",
     "venusaur": "grass",
     "charmander": "fire",
