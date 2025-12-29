@@ -60,7 +60,8 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
     scrapeData,
     scrapeSnapshotData,
     simulateKeyPress,
-    getRandomAttractButton
+    getRandomAttractButton,
+    setGameStateInterval
   } = useEmulator(config, approved);
 
   // Function to capture turn data (but not send yet - will be sent with message)
@@ -154,15 +155,61 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
       return;
     }
 
-    // Capture initial snapshot
-    captureSnapshot();
+    let isMounted = true;
+    let intervalId = null;
+    let retryTimeoutId = null;
 
-    // Then capture every 30 seconds
-    const interval = setInterval(captureSnapshot, 30000);
+    // Validate that game has started before capturing snapshots
+    // This prevents debug logs before player enters their name
+    const validateAndCapture = async () => {
+      if (!isMounted) return;
 
-    return () => clearInterval(interval);
-  }, [isActive, captureSnapshot]);
+      try {
+        const testData = await scrapeSnapshotData();
+        if (!testData) {
+          // Game not ready yet, retry after delay
+          if (isMounted) {
+            retryTimeoutId = setTimeout(validateAndCapture, 2000);
+          }
+          return;
+        }
 
+        // Game is ready, capture initial snapshot
+        if (isMounted) {
+          captureSnapshot();
+
+          // Then capture every 30 seconds
+          intervalId = setInterval(captureSnapshot, 30000);
+        }
+      } catch (error) {
+        console.warn('Snapshot validation failed, retrying...', error);
+        if (isMounted) {
+          retryTimeoutId = setTimeout(validateAndCapture, 2000);
+        }
+      }
+    };
+
+    // Start validation process
+    validateAndCapture();
+
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      if (retryTimeoutId) {
+        clearTimeout(retryTimeoutId);
+      }
+    };
+  }, [isActive, captureSnapshot, scrapeSnapshotData]);
+
+  // Configure game state polling interval from config
+  useEffect(() => {
+    if (!isLoaded || !config?.gameStatePollInterval) return;
+
+    console.log(`⚙️ Configuring game state poll interval: ${config.gameStatePollInterval}ms`);
+    setGameStateInterval(config.gameStatePollInterval);
+  }, [isLoaded, config?.gameStatePollInterval, setGameStateInterval]);
 
   // Track if we've loaded the save for initial attract mode
   const initialSaveLoadedRef = useRef(false);

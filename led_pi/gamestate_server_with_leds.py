@@ -34,6 +34,8 @@ import time
 import math
 import random
 import threading
+import socket
+import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -832,13 +834,62 @@ async def root():
     }
 
 
+def get_local_interfaces():
+    """Get local network interfaces (Ethernet and WiFi)"""
+    interfaces = []
+
+    # Get all network interfaces
+    try:
+        import netifaces
+        for iface in netifaces.interfaces():
+            # Skip loopback and virtual interfaces
+            if iface in ['lo', 'docker0'] or iface.startswith(('br-', 'veth', 'virbr')):
+                continue
+
+            addrs = netifaces.ifaddresses(iface)
+            if netifaces.AF_INET in addrs:
+                for addr_info in addrs[netifaces.AF_INET]:
+                    ip = addr_info.get('addr')
+                    if ip and ip != '127.0.0.1':
+                        # Determine interface type
+                        iface_type = 'ethernet' if iface.startswith(('eth', 'en', 'em')) else \
+                                     'wifi' if iface.startswith(('wlan', 'wl')) else 'other'
+                        interfaces.append({
+                            'interface': iface,
+                            'address': ip,
+                            'type': iface_type
+                        })
+    except ImportError:
+        # Fallback: use socket to get primary IP (less detailed)
+        try:
+            # Connect to external IP to determine local interface IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            s.close()
+            if ip and ip != '127.0.0.1':
+                interfaces.append({
+                    'interface': 'primary',
+                    'address': ip,
+                    'type': 'unknown'
+                })
+        except Exception:
+            pass
+
+    return interfaces
+
+
 @app.get("/health")
 async def health_check():
-    """Health check"""
+    """Health check with local network interface information"""
+    interfaces = get_local_interfaces()
+
     return {
         "status": "healthy",
         "led_status": "active" if LED_AVAILABLE and not led_controller.mock_mode else "mock",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "network_interfaces": interfaces,
+        "hostname": socket.gethostname()
     }
 
 

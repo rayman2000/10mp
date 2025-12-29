@@ -31,7 +31,7 @@ class EmulatorManager {
     this._gameStateConfig = {
       enabled: false,  // Will be set by auto-detection
       port: 3333,      // Default port for gamestate server
-      interval: 1000   // Default update interval (1 second)
+      interval: 200    // Default update interval (200ms = 5Hz)
     };
     this._gameStateInterval = null;
     this._gameStateServerOffline = false; // Track if server is down to reduce error spam
@@ -92,6 +92,26 @@ class EmulatorManager {
       console.log(`🌐 Game State Server: Not detected (localhost:${this._gameStateConfig.port})`);
       console.log(`   → LED integration disabled`);
       return false;
+    }
+  }
+
+  /**
+   * Configure the game state polling interval
+   * @param {number} intervalMs - Polling interval in milliseconds (recommended: 100-1000ms)
+   */
+  setGameStateInterval(intervalMs) {
+    const oldInterval = this._gameStateConfig.interval;
+    this._gameStateConfig.interval = intervalMs;
+
+    console.log(`🔄 Game state polling interval changed: ${oldInterval}ms → ${intervalMs}ms`);
+
+    // If polling is already running, restart it with new interval
+    if (this._gameStateInterval) {
+      clearInterval(this._gameStateInterval);
+      this._gameStateInterval = setInterval(() => {
+        this.sendGameStateUpdate();
+      }, this._gameStateConfig.interval);
+      console.log(`   → Polling restarted with new interval`);
     }
   }
 
@@ -823,16 +843,15 @@ class EmulatorManager {
       }
 
       // First time: scan for memory layout (expensive, but only done once)
-      console.log('First-time save state scan, size:', state.length, 'bytes');
-      const magic = String.fromCharCode(state[0], state[1], state[2], state[3]);
-      console.log('Magic bytes:', magic);
-
       const found = this.scanForSaveblockPointers(state);
 
       if (!found) {
-        console.log('Could not find GBA memory in save state');
+        // Silently return null if memory not found (expected before game starts)
         return null;
       }
+
+      // Only log success to avoid spam before game loads
+      console.log('First-time save state scan successful, size:', state.length, 'bytes');
 
       // Cache offsets permanently - they never change for this emulator session
       this._cachedMemoryOffsets = {
@@ -913,7 +932,9 @@ class EmulatorManager {
     }
 
     // Try known header offsets (libretro wrappers often add fixed-size headers)
-    console.log('Magic search failed, trying known header offsets...');
+    if (!this._scanDebugLogged) {
+      console.log('Magic search failed, trying known header offsets...');
+    }
     const knownOffsets = [0, 0x38, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000, 0x4000, 0x8000, 0x10000, 0x20000];
 
     for (const headerOffset of knownOffsets) {
@@ -926,8 +947,11 @@ class EmulatorManager {
       const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 4);
 
       if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
-        console.log(`Found at known offset 0x${headerOffset.toString(16)}:`);
-        console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+        if (!this._scanDebugLogged) {
+          console.log(`Found at known offset 0x${headerOffset.toString(16)}:`);
+          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+        }
+        this._scanDebugLogged = true;
         return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset };
       }
     }
@@ -962,11 +986,14 @@ class EmulatorManager {
             const nameByte = state[nameAddr];
             // Valid Pokemon text starts with 0xBB-0xEE range (letters)
             if (nameByte >= 0xBB && nameByte <= 0xEE) {
-              console.log(`Pattern match at offset 0x${i.toString(16)}:`);
-              console.log(`  SB1=0x${val1.toString(16)}, SB2=0x${val2.toString(16)}`);
-              console.log(`  Calculated IWRAM base: 0x${iwramBase.toString(16)}`);
-              console.log(`  Calculated EWRAM base: 0x${ewramBase.toString(16)}`);
-              console.log(`  Name first byte: 0x${nameByte.toString(16)}`);
+              if (!this._scanDebugLogged) {
+                console.log(`Pattern match at offset 0x${i.toString(16)}:`);
+                console.log(`  SB1=0x${val1.toString(16)}, SB2=0x${val2.toString(16)}`);
+                console.log(`  Calculated IWRAM base: 0x${iwramBase.toString(16)}`);
+                console.log(`  Calculated EWRAM base: 0x${ewramBase.toString(16)}`);
+                console.log(`  Name first byte: 0x${nameByte.toString(16)}`);
+              }
+              this._scanDebugLogged = true;
               return { iwramBase, ewramBase, headerOffset: i - MGBA_IWRAM_OFFSET - SB_PTR_OFFSET_IN_IWRAM };
             }
           }
@@ -975,7 +1002,9 @@ class EmulatorManager {
     }
 
     // Last resort: try to find EWRAM by looking for Pokemon party signature
-    console.log('Pointer scan failed, trying alternate pattern detection...');
+    if (!this._scanDebugLogged) {
+      console.log('Pointer scan failed, trying alternate pattern detection...');
+    }
     return this.scanForAlternatePatterns(state);
   }
 
@@ -1080,6 +1109,9 @@ class EmulatorManager {
 
     if (!this._scanDebugLogged) {
       console.log('No alternate patterns found');
+      // Set flag to true after first scan attempt (success or failure)
+      // This prevents log spam on subsequent retries before game starts
+      this._scanDebugLogged = true;
     }
     return null;
   }
@@ -1874,17 +1906,9 @@ class EmulatorManager {
       // Method 2: Read battle type flags for additional information
       const battleFlags = this.readGBADword(EmulatorManager.ADDRESSES.BATTLE_FLAGS);
 
-      // Verify both methods agree (exclude IS_MASTER bit 0x04 from flags check)
-      if (battleFlags !== null) {
-        const flagsIndicateBattle = (battleFlags & 0xFFFB) !== 0;
-        if (isInBattle !== flagsIndicateBattle) {
-          console.warn('⚠️ Battle detection mismatch:', {
-            inBattleFlag: isInBattle,
-            battleFlagsActive: flagsIndicateBattle,
-            flags: '0x' + battleFlags.toString(16)
-          });
-        }
-      }
+      // Note: GMAIN_INBATTLE (Method 1) is the most reliable indicator
+      // BATTLE_FLAGS may disagree during transitions, which is expected
+      // Removed mismatch warning as it creates noise during valid game states
 
       // Battle state tracking (delta logging handled by pollStateChanges)
       this._lastBattleState = isInBattle;
