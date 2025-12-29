@@ -29,13 +29,16 @@ class EmulatorManager {
     // Event collection for game state server integration
     this._pendingEvents = [];
     this._gameStateConfig = {
-      enabled: import.meta.env.VITE_GAMESTATE_SERVER_ENABLED === 'true',
-      port: parseInt(import.meta.env.VITE_GAMESTATE_SERVER_PORT || '3333'),
-      interval: Math.max(100, Math.min(5000,
-        parseInt(import.meta.env.VITE_GAMESTATE_SERVER_INTERVAL || '1000')))
+      enabled: false,  // Will be set by auto-detection
+      port: 3333,      // Default port for gamestate server
+      interval: 1000   // Default update interval (1 second)
     };
     this._gameStateInterval = null;
     this._gameStateServerOffline = false; // Track if server is down to reduce error spam
+    this._gameStateServerAvailable = false; // Track if server was detected at startup
+
+    // Track if game has loaded to suppress pointer warnings on startup
+    this._gameLoadedOnce = false;
 
     console.log('EmulatorManager initialized');
   }
@@ -55,6 +58,38 @@ class EmulatorManager {
       timestamp: new Date().toISOString(),
       data
     });
+  }
+
+  /**
+   * Auto-detect gamestate server availability
+   * Attempts to connect to localhost:3333/health
+   * Enables the feature if server responds
+   * @returns {Promise<boolean>} true if server detected, false otherwise
+   */
+  async detectGameStateServer() {
+    const url = `http://localhost:${this._gameStateConfig.port}/health`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(2000)  // 2 second timeout
+      });
+
+      if (response.ok) {
+        this._gameStateConfig.enabled = true;
+        this._gameStateServerAvailable = true;
+        console.log(`🌐 Game State Server: DETECTED at localhost:${this._gameStateConfig.port}`);
+        console.log(`   → Events will be sent every ${this._gameStateConfig.interval}ms`);
+        return true;
+      }
+    } catch (error) {
+      // Server not running - this is expected and OK
+      this._gameStateConfig.enabled = false;
+      this._gameStateServerAvailable = false;
+      console.log(`🌐 Game State Server: Not detected (localhost:${this._gameStateConfig.port})`);
+      console.log(`   → LED integration disabled`);
+      return false;
+    }
   }
 
   async initialize() {
@@ -175,7 +210,10 @@ class EmulatorManager {
         
         // Wait for initialization to complete
         await this.waitForInitialization();
-        
+
+        // Auto-detect gamestate server availability
+        await this.detectGameStateServer();
+
         console.log('✅ EmulatorJS initialization complete');
         return true;
       } catch (scriptError) {
@@ -1508,7 +1546,10 @@ class EmulatorManager {
       // Read location from saveblock1 - this is the authoritative source
       const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock1 pointer for location');
+        // Only log if game has loaded before (suppress startup spam)
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer for location');
+        }
         return null;
       }
 
@@ -1545,7 +1586,10 @@ class EmulatorManager {
       // First get saveblock1 pointer
       const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock1 pointer:', sb1Ptr?.toString(16));
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer:', sb1Ptr?.toString(16));
+        }
         return null;
       }
 
@@ -1581,7 +1625,10 @@ class EmulatorManager {
       // Playtime is in saveblock2
       const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
       if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock2 pointer');
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock2 pointer');
+        }
         return null;
       }
 
@@ -1621,11 +1668,17 @@ class EmulatorManager {
       const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
 
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock1 pointer for money');
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer for money');
+        }
         return null;
       }
       if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock2 pointer for security key');
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock2 pointer for security key');
+        }
         return null;
       }
 
@@ -1787,20 +1840,8 @@ class EmulatorManager {
       // Method 2: Read battle type flags for additional information
       const battleFlags = this.readGBADword(EmulatorManager.ADDRESSES.BATTLE_FLAGS);
 
-      // Debug first call
-      if (!this._battleDebugDone) {
-        console.log('🔍 Battle Detection Debug:');
-        console.log('  - gMain.inBattle address:', `0x${EmulatorManager.ADDRESSES.GMAIN_INBATTLE.toString(16)}`);
-        console.log('  - gMain.inBattle byte:', inBattleByte !== null ? `0x${inBattleByte.toString(16)}` : 'null');
-        console.log('  - Is in battle (bit 1):', isInBattle);
-        console.log('  - Battle flags address:', `0x${EmulatorManager.ADDRESSES.BATTLE_FLAGS.toString(16)}`);
-        console.log('  - Battle flags value:', battleFlags !== null ? `0x${battleFlags.toString(16)}` : 'null');
-        console.log('  - Decoded types:', this.decodeBattleType(battleFlags || 0));
-        this._battleDebugDone = true;
-      }
-
       // Verify both methods agree (exclude IS_MASTER bit 0x04 from flags check)
-      if (battleFlags !== null && !this._battleDebugDone) {
+      if (battleFlags !== null) {
         const flagsIndicateBattle = (battleFlags & 0xFFFB) !== 0;
         if (isInBattle !== flagsIndicateBattle) {
           console.warn('⚠️ Battle detection mismatch:', {
@@ -1897,7 +1938,10 @@ class EmulatorManager {
       }
 
       if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
-        console.warn(`Invalid SaveBlock2 pointer: ${sb2Ptr ? '0x' + sb2Ptr.toString(16) : 'null'}`);
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.warn(`Invalid SaveBlock2 pointer: ${sb2Ptr ? '0x' + sb2Ptr.toString(16) : 'null'}`);
+        }
         return null;
       }
 
@@ -1954,7 +1998,10 @@ class EmulatorManager {
     try {
       const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock1 pointer for bag');
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer for bag');
+        }
         return null;
       }
 
@@ -2089,6 +2136,12 @@ class EmulatorManager {
       const location = this.readCurrentLocation();
       const battleState = this.readBattleState();
       const inBattle = battleState?.isInBattle || false;
+
+      // Mark game as loaded once we successfully read location
+      if (location && !this._gameLoadedOnce) {
+        this._gameLoadedOnce = true;
+        console.log('✅ Game loaded successfully');
+      }
 
       // Check for location change
       if (location && location !== this._lastKnownState.location) {
@@ -2229,8 +2282,8 @@ class EmulatorManager {
   // NOTE: This sends delta events PLUS current state snapshot for context
   // For turn history snapshots, see scrapeSnapshotData() (saved to database)
   async sendGameStateUpdate() {
-    // PERFORMANCE: Early exit if disabled
-    if (!this._gameStateConfig.enabled) return;
+    // PERFORMANCE: Early exit if not enabled or server not available
+    if (!this._gameStateConfig.enabled || !this._gameStateServerAvailable) return;
 
     // PERFORMANCE: Early exit if no events to send
     if (this._pendingEvents.length === 0) return;
@@ -2303,9 +2356,9 @@ class EmulatorManager {
       this.pollStateChanges();
     }, 1000); // Poll every 1 second
 
-    // Start game state server updates if enabled
-    if (this._gameStateConfig.enabled) {
-      console.log(`🌐 Game state server enabled - sending updates to localhost:${this._gameStateConfig.port} every ${this._gameStateConfig.interval}ms`);
+    // Start game state server updates if detected and enabled
+    if (this._gameStateConfig.enabled && this._gameStateServerAvailable) {
+      console.log(`🌐 Starting game state updates to localhost:${this._gameStateConfig.port}`);
       this._gameStateInterval = setInterval(() => {
         this.sendGameStateUpdate();
       }, this._gameStateConfig.interval);
