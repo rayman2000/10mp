@@ -1052,30 +1052,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// System info endpoint - returns local IP addresses for debugging
-app.get('/api/system/ip', (req, res) => {
-  const os = require('os');
-  const interfaces = os.networkInterfaces();
-  const addresses = [];
-
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      // Skip internal (loopback) and non-IPv4 addresses
-      if (iface.family === 'IPv4' && !iface.internal) {
-        addresses.push({
-          interface: name,
-          address: iface.address
-        });
-      }
-    }
-  }
-
-  res.json({
-    hostname: os.hostname(),
-    addresses
-  });
-});
-
 // Production static file serving (when built frontends are available)
 if (process.env.NODE_ENV === 'production') {
   // Serve admin app at /admin

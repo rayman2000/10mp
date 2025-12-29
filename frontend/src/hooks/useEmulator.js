@@ -130,6 +130,15 @@ export const useEmulator = (config = {}, approved = false) => {
     return buttons[Math.floor(Math.random() * buttons.length)];
   }, []);
 
+  // Configure game state polling interval
+  const setGameStateInterval = useCallback((intervalMs) => {
+    if (emulatorRef.current) {
+      return emulatorRef.current.setGameStateInterval(intervalMs);
+    }
+    console.warn('Cannot set game state interval - emulator not initialized');
+    return false;
+  }, []);
+
   // Expose debug function globally for easy console access
   useEffect(() => {
     if (emulatorRef.current) {
@@ -161,6 +170,7 @@ export const useEmulator = (config = {}, approved = false) => {
     scrapeSnapshotData,
     debugMemory,
     simulateKeyPress,
-    getRandomAttractButton
+    getRandomAttractButton,
+    setGameStateInterval
   };
 };

@@ -60,7 +60,8 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
     scrapeData,
     scrapeSnapshotData,
     simulateKeyPress,
-    getRandomAttractButton
+    getRandomAttractButton,
+    setGameStateInterval
   } = useEmulator(config, approved);
 
   // Function to capture turn data (but not send yet - will be sent with message)
@@ -163,6 +164,13 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
     return () => clearInterval(interval);
   }, [isActive, captureSnapshot]);
 
+  // Configure game state polling interval from config
+  useEffect(() => {
+    if (!isLoaded || !config?.gameStatePollInterval) return;
+
+    console.log(`⚙️ Configuring game state poll interval: ${config.gameStatePollInterval}ms`);
+    setGameStateInterval(config.gameStatePollInterval);
+  }, [isLoaded, config?.gameStatePollInterval, setGameStateInterval]);
 
   // Track if we've loaded the save for initial attract mode
   const initialSaveLoadedRef = useRef(false);

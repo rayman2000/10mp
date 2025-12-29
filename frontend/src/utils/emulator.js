@@ -31,7 +31,7 @@ class EmulatorManager {
     this._gameStateConfig = {
       enabled: false,  // Will be set by auto-detection
       port: 3333,      // Default port for gamestate server
-      interval: 1000   // Default update interval (1 second)
+      interval: 200    // Default update interval (200ms = 5Hz)
     };
     this._gameStateInterval = null;
     this._gameStateServerOffline = false; // Track if server is down to reduce error spam
@@ -92,6 +92,26 @@ class EmulatorManager {
       console.log(`🌐 Game State Server: Not detected (localhost:${this._gameStateConfig.port})`);
       console.log(`   → LED integration disabled`);
       return false;
+    }
+  }
+
+  /**
+   * Configure the game state polling interval
+   * @param {number} intervalMs - Polling interval in milliseconds (recommended: 100-1000ms)
+   */
+  setGameStateInterval(intervalMs) {
+    const oldInterval = this._gameStateConfig.interval;
+    this._gameStateConfig.interval = intervalMs;
+
+    console.log(`🔄 Game state polling interval changed: ${oldInterval}ms → ${intervalMs}ms`);
+
+    // If polling is already running, restart it with new interval
+    if (this._gameStateInterval) {
+      clearInterval(this._gameStateInterval);
+      this._gameStateInterval = setInterval(() => {
+        this.sendGameStateUpdate();
+      }, this._gameStateConfig.interval);
+      console.log(`   → Polling restarted with new interval`);
     }
   }
 
