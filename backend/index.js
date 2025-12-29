@@ -549,6 +549,87 @@ app.delete('/api/admin/roms/:filename', requireAdminAuth, async (req, res) => {
 
 // Save State Endpoints
 
+// POST /api/admin/upload-save - Upload save file and create turn (admin only)
+app.post('/api/admin/upload-save', requireAdminAuth, async (req, res) => {
+  try {
+    const { filename, data, playerName, location, badgeCount } = req.body;
+
+    // Validation
+    if (!filename || !data) {
+      return res.status(400).json({ error: 'filename and data are required' });
+    }
+
+    if (!playerName) {
+      return res.status(400).json({ error: 'playerName is required' });
+    }
+
+    // Validate file extension
+    if (!filename.toLowerCase().endsWith('.sav')) {
+      return res.status(400).json({ error: 'Only .sav files are allowed' });
+    }
+
+    // Sanitize filename (prevent path traversal)
+    if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    // Initialize storage
+    if (!saveStateStorage.initialized) {
+      await saveStateStorage.initialize();
+    }
+
+    // Decode base64
+    const buffer = Buffer.from(data, 'base64');
+
+    // File size validation (5MB max)
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(413).json({ error: 'File too large. Max size: 5MB' });
+    }
+
+    // Validate minimum size (GBA saves are at least 64KB)
+    if (buffer.length < 64 * 1024) {
+      return res.status(400).json({ error: 'File too small. Invalid save file?' });
+    }
+
+    // Create new GameTurn record
+    const gameTurn = await GameTurn.create({
+      playerName,
+      location: location || 'Uploaded',
+      badgeCount: badgeCount || 0,
+      playtime: 0,
+      money: 0,
+      partyData: null,
+      turnDuration: 0,
+      message: 'Save uploaded by admin',
+      saveStateUrl: null,
+      turnEndedAt: new Date()
+    });
+
+    // Upload to MinIO
+    const saveStateUrl = await saveStateStorage.saveTurnSave(
+      process.env.DEFAULT_SESSION_ID || 'main-game',
+      gameTurn.id,
+      buffer,
+      { playerName, location: location || 'Uploaded', badgeCount: badgeCount || 0 }
+    );
+
+    // Update turn with saveStateUrl
+    gameTurn.saveStateUrl = saveStateUrl;
+    await gameTurn.save();
+
+    res.json({
+      success: true,
+      saveStateUrl,
+      turnId: gameTurn.id,
+      size: buffer.length,
+      message: 'Save uploaded successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading save:', error);
+    res.status(500).json({ error: 'Failed to upload save' });
+  }
+});
+
 // GET /api/saves - List all saves
 app.get('/api/saves', async (req, res) => {
   try {

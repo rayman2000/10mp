@@ -781,3 +781,33 @@
   cursor: pointer;
   accent-color: #667eea;
 }
+
+/* Upload Save Section */
+.upload-save-section {
+  max-width: 1400px;
+  margin: 20px auto;
+  padding: 30px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.upload-save-section h2 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 20px;
+}
+
+.upload-save-section .upload-hint {
+  margin: 10px 0 0 0;
+  color: #666;
+  font-size: 14px;
+}
+
+/* Turn Actions */
+.turn-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

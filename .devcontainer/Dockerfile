@@ -1,7 +1,7 @@
-FROM node:25-alpine
+FROM node:25-bookworm
 
 # Install essential development tools
-RUN apk add --no-cache \
+RUN apt update && apt install -y \
     git \
     curl \
     bash \
@@ -14,6 +14,8 @@ WORKDIR /workspace
 
 # Expose common ports
 EXPOSE 3000 3001 3002 5432 9000 9001
+
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # Keep container running
 CMD ["sleep", "infinity"]

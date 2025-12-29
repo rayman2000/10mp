@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { gameApi, authApi, kioskApi, romApi, setAdminToken, clearAdminToken } from '../services/adminApi';
+import { gameApi, authApi, kioskApi, romApi, saveApi, setAdminToken, clearAdminToken } from '../services/adminApi';
 import './AdminPanel.css';
 
 const PAGE_SIZE = 20;
@@ -26,6 +26,10 @@ const AdminPanel = () => {
   const [roms, setRoms] = useState([]);
   const [uploadingRom, setUploadingRom] = useState(false);
   const romFileInputRef = useRef(null);
+
+  // Save state management
+  const [uploadingSave, setUploadingSave] = useState(false);
+  const saveFileInputRef = useRef(null);
 
   // Fetch stats, game turns, pending kiosks, and ROMs
   const fetchData = async (includeInvalidatedOverride = null) => {
@@ -245,6 +249,49 @@ const AdminPanel = () => {
     }
   };
 
+  // Save state upload handler
+  const handleSaveUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.sav')) {
+      setMessage('Error: Only .sav files are allowed');
+      return;
+    }
+
+    try {
+      setUploadingSave(true);
+      setMessage(`Uploading save: ${file.name}...`);
+
+      const result = await saveApi.uploadSave(file, {
+        playerName: 'Admin Upload',
+        location: 'Uploaded Save',
+        badgeCount: 0
+      });
+
+      setMessage(`Save uploaded successfully! Created Turn #${result.turnId.substring(0, 8)}`);
+      await fetchData();
+    } catch (error) {
+      setMessage(`Error uploading save: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setUploadingSave(false);
+      if (saveFileInputRef.current) {
+        saveFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Save state download handler
+  const handleSaveDownload = async (objectKey, filename) => {
+    try {
+      setMessage(`Downloading ${filename || objectKey}...`);
+      await saveApi.downloadSave(objectKey);
+      setMessage(`Downloaded ${filename || objectKey}`);
+    } catch (error) {
+      setMessage(`Error downloading save: ${error.response?.data?.error || error.message}`);
+    }
+  };
+
   // Format file size
   const formatFileSize = (bytes) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -386,6 +433,15 @@ const AdminPanel = () => {
                 disabled={loading}
               >
                 Restore to This Turn
+              </button>
+            )}
+            {turn.saveStateUrl && (
+              <button
+                onClick={() => { onClose(); handleSaveDownload(turn.saveStateUrl, turn.saveStateUrl); }}
+                className="admin-button"
+                disabled={loading}
+              >
+                Download Save File
               </button>
             )}
             <button onClick={onClose} className="admin-button-secondary">
@@ -666,16 +722,28 @@ const AdminPanel = () => {
                         Duration: {Math.floor((turn.turnDuration || 0) / 60)}m {(turn.turnDuration || 0) % 60}s
                       </div>
                     </div>
-                    {turn.saveStateUrl && !turn.invalidatedAt && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleRestoreTurn(turn); }}
-                        className="admin-button-small"
-                        disabled={loading}
-                        title="Restore game to this point"
-                      >
-                        Restore
-                      </button>
-                    )}
+                    <div className="turn-actions">
+                      {turn.saveStateUrl && !turn.invalidatedAt && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRestoreTurn(turn); }}
+                          className="admin-button-small"
+                          disabled={loading}
+                          title="Restore game to this point"
+                        >
+                          Restore
+                        </button>
+                      )}
+                      {turn.saveStateUrl && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleSaveDownload(turn.saveStateUrl, turn.saveStateUrl); }}
+                          className="admin-button-small"
+                          disabled={loading}
+                          title="Download save file"
+                        >
+                          Download
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
                 {turnsHasMore && (
@@ -695,6 +763,27 @@ const AdminPanel = () => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Upload Save Files */}
+      <div className="upload-save-section">
+        <h2>Upload Save File</h2>
+        <input
+          type="file"
+          ref={saveFileInputRef}
+          onChange={handleSaveUpload}
+          accept=".sav"
+          style={{ display: 'none' }}
+          disabled={uploadingSave}
+        />
+        <button
+          onClick={() => saveFileInputRef.current?.click()}
+          className="admin-button"
+          disabled={uploadingSave || loading}
+        >
+          {uploadingSave ? 'Uploading...' : 'Upload Save File'}
+        </button>
+        <p className="upload-hint">Upload a .sav file to create a new turn in the game history</p>
       </div>
     </div>
   );
