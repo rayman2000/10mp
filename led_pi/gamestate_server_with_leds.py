@@ -512,7 +512,7 @@ class LedController:
 
             self.pixels.fill(current_color)
             self.pixels.show()
-            time.sleep(0.05)
+            time.sleep(0.02)
 
     def _anim_switch(self, old_type, new_type):
         """Pokemon switch wipe effect"""
