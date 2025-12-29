@@ -15,19 +15,19 @@
   text-align: center;
   max-width: 1000px;
   padding: 0;
-  background: #f7fafc;
+  background: transparent;
   border: 6px solid #2d3748;
   border-radius: 16px;
   box-shadow:
-    inset 2px 2px 0px #ffffff,
-    inset -2px -2px 0px #a0aec0,
+    inset 2px 2px 0px rgba(255, 255, 255, 0.3),
+    inset -2px -2px 0px rgba(160, 174, 192, 0.3),
     4px 4px 8px rgba(0, 0, 0, 0.3);
   color: #1a202c;
 }
 
 .game-header {
   padding: 54px 54px 45px;
-  background: linear-gradient(180deg, #9b4b4b 0%, #7a3a3a 100%);
+  background: linear-gradient(180deg, rgba(155, 75, 75, 0.4) 0%, rgba(122, 58, 58, 0.4) 100%);
   border-bottom: 5px solid #5c2c2c;
   position: relative;
 }
@@ -162,25 +162,11 @@
 
 /* Play now arrow */
 .play-now-arrow {
-  position: absolute;
-  left: 30px;
-  top: 33%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  gap: 30px;
-  background: linear-gradient(180deg, #9b4b4b 0%, #7a3a3a 100%);
-  padding: 30px 50px;
-  border-radius: 20px;
-  border: 6px solid #5c2c2c;
-  box-shadow:
-    inset 2px 2px 0px #b35959,
-    inset -2px -2px 0px #6b3030,
-    6px 6px 20px rgba(0, 0, 0, 0.4);
+  display: none;
 }
 
 .arrow-text {
-  font-size: 72px;
+  font-size: 52px;
   font-weight: bold;
   color: #f5e6d3;
   text-shadow: 4px 4px 0px #5c2c2c;
@@ -190,7 +176,7 @@
 }
 
 .arrow-icon {
-  font-size: 100px;
+  font-size: 72px;
   color: #f5e6d3;
   text-shadow: 4px 4px 0px #5c2c2c;
 }

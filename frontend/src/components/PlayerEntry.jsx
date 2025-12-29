@@ -32,10 +32,6 @@ const PlayerEntry = memo(({ previousMessage, onStartGame, saveDataReady = true }
 
   return (
     <div className="player-entry">
-      <div className="play-now-arrow">
-        <span className="arrow-text">Play now!</span>
-        <span className="arrow-icon">&#10148;</span>
-      </div>
       <div className="entry-container">
         <div className="game-header">
           <h1>10 Minute Pokemon</h1>
@@ -46,7 +42,7 @@ const PlayerEntry = memo(({ previousMessage, onStartGame, saveDataReady = true }
           <h2>Message from the previous player:</h2>
           <p>{previousMessage}</p>
         </div>
-        
+
         <div className="name-form">
           <label htmlFor="playerName">Enter your name and press Enter:</label>
           <input
