@@ -456,10 +456,13 @@ class LedController:
         step_size = 0.15
         wave_density = 0.6
 
-        if len(colors) < 3:
-            colors = (colors * 3)[:3]
-
         while self.current_state == "WALKING" and self.running:
+            # Fetch current colors from state_data to support dynamic updates
+            current_colors = self.state_data.get("colors", LOCATION_COLORS["route generic"])
+
+            if len(current_colors) < 3:
+                current_colors = (current_colors * 3)[:3]
+
             for i in range(LED_COUNT):
                 theta = (i * wave_density) + offset
                 val = math.sin(theta)
@@ -467,7 +470,7 @@ class LedController:
 
                 cycle_index = int((theta + math.pi/2) / (2 * math.pi))
                 block_idx = cycle_index % 3
-                base_color = colors[block_idx]
+                base_color = current_colors[block_idx]
 
                 r = int(base_color[0] * brightness)
                 g = int(base_color[1] * brightness)
