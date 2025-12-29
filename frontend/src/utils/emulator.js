@@ -40,6 +40,9 @@ class EmulatorManager {
     // Track if game has loaded to suppress pointer warnings on startup
     this._gameLoadedOnce = false;
 
+    // Track if scan debug has been logged to prevent spam
+    this._scanDebugLogged = false;
+
     console.log('EmulatorManager initialized');
   }
 
@@ -872,11 +875,15 @@ class EmulatorManager {
     const SB_PTR_OFFSET_IN_IWRAM = 0x5008;
 
     // First, try to find the mGBA state by looking for the version magic
-    console.log('Searching for mGBA version magic (0x01000007)...');
+    if (!this._scanDebugLogged) {
+      console.log('Searching for mGBA version magic (0x01000007)...');
+    }
     for (let i = 0; i < state.length - 0x61000; i += 4) {
       const magic = this.readU32FromArray(state, i);
       if (magic === MGBA_VERSION_MAGIC) {
-        console.log(`Found mGBA magic at offset 0x${i.toString(16)}`);
+        if (!this._scanDebugLogged) {
+          console.log(`Found mGBA magic at offset 0x${i.toString(16)}`);
+        }
 
         // Verify by checking the saveblock pointers
         const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
@@ -886,13 +893,20 @@ class EmulatorManager {
           const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM);
           const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 4);
 
-          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          if (!this._scanDebugLogged) {
+            console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          }
 
           if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
-            console.log(`  Valid saveblock pointers found!`);
+            if (!this._scanDebugLogged) {
+              console.log(`  Valid saveblock pointers found!`);
+            }
+            this._scanDebugLogged = true; // Stop logging after first success
             return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
           } else {
-            console.log(`  Saveblock pointers not valid, continuing search...`);
+            if (!this._scanDebugLogged) {
+              console.log(`  Saveblock pointers not valid, continuing search...`);
+            }
           }
         }
       }
@@ -919,7 +933,9 @@ class EmulatorManager {
     }
 
     // If known offsets fail, scan the entire state for the pointer pattern
-    console.log('Known offsets failed, scanning entire state for pointer pattern...');
+    if (!this._scanDebugLogged) {
+      console.log('Known offsets failed, scanning entire state for pointer pattern...');
+    }
 
     for (let i = 0; i < state.length - 0x48000; i += 4) {
       const val1 = this.readU32FromArray(state, i);
@@ -984,7 +1000,9 @@ class EmulatorManager {
     const MGBA_IWRAM_OFFSET = 0x19000;
     const MGBA_EWRAM_OFFSET = 0x21000;
 
-    console.log('Searching for Pokemon Fire Red game code signature...');
+    if (!this._scanDebugLogged) {
+      console.log('Searching for Pokemon Fire Red game code signature...');
+    }
 
     // Search for "BPRE" or "BPRJ" game codes
     const gameCodes = ['BPRE', 'BPRJ', 'BPRF', 'BPRD', 'BPRS', 'BPRI'];
@@ -997,8 +1015,10 @@ class EmulatorManager {
 
         const found = code.split('').every((ch, j) => state[codeOffset + j] === ch.charCodeAt(0));
         if (found) {
-          console.log(`Found game code "${code}" at offset 0x${codeOffset.toString(16)}`);
-          console.log(`  State would start at offset 0x${i.toString(16)}`);
+          if (!this._scanDebugLogged) {
+            console.log(`Found game code "${code}" at offset 0x${codeOffset.toString(16)}`);
+            console.log(`  State would start at offset 0x${i.toString(16)}`);
+          }
 
           const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
           const testEWRAMBase = i + MGBA_EWRAM_OFFSET;
@@ -1008,10 +1028,15 @@ class EmulatorManager {
             const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + 0x5008);
             const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + 0x500C);
 
-            console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+            if (!this._scanDebugLogged) {
+              console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+            }
 
             if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
-              console.log(`  Valid saveblock pointers confirmed!`);
+              if (!this._scanDebugLogged) {
+                console.log(`  Valid saveblock pointers confirmed!`);
+              }
+              this._scanDebugLogged = true;
               return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
             }
           }
@@ -1020,7 +1045,9 @@ class EmulatorManager {
     }
 
     // Try looking for "POKEMON FIRE" game title at offset 0x10
-    console.log('Searching for "POKEMON FIRE" title...');
+    if (!this._scanDebugLogged) {
+      console.log('Searching for "POKEMON FIRE" title...');
+    }
     const title = 'POKEMON FIRE';
     for (let i = 0; i < state.length - 0x61000; i++) {
       const titleOffset = i + 0x10;
@@ -1028,7 +1055,9 @@ class EmulatorManager {
 
       const found = title.split('').every((ch, j) => state[titleOffset + j] === ch.charCodeAt(0));
       if (found) {
-        console.log(`Found title at offset 0x${titleOffset.toString(16)}`);
+        if (!this._scanDebugLogged) {
+          console.log(`Found title at offset 0x${titleOffset.toString(16)}`);
+        }
 
         const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
         const testEWRAMBase = i + MGBA_EWRAM_OFFSET;
@@ -1037,16 +1066,21 @@ class EmulatorManager {
           const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + 0x5008);
           const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + 0x500C);
 
-          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          if (!this._scanDebugLogged) {
+            console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          }
 
           if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
+            this._scanDebugLogged = true;
             return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
           }
         }
       }
     }
 
-    console.log('No alternate patterns found');
+    if (!this._scanDebugLogged) {
+      console.log('No alternate patterns found');
+    }
     return null;
   }
 
