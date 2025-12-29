@@ -48,6 +48,8 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false); // Ref to avoid recreating captureTurnData callback
   const [turnStartTime, setTurnStartTime] = useState(null); // Set when timer actually starts
+  const [snapshots, setSnapshots] = useState([]); // Store snapshots collected during turn
+  const [snapshotSequence, setSnapshotSequence] = useState(0); // Sequence counter for snapshots
   const {
     isLoaded,
     isRunning,
@@ -56,6 +58,7 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
     saveGame,
     loadGame,
     scrapeData,
+    scrapeSnapshotData,
     simulateKeyPress,
     getRandomAttractButton
   } = useEmulator(config, approved);
@@ -95,10 +98,12 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
         money: gameData?.money || 0,
         partyData: gameData?.party || [],
         turnDuration,
-        saveState: saveState || null
+        saveState: saveState || null,
+        snapshots: snapshots // Include collected snapshots
       };
 
       console.log('Turn data captured (will be sent with message):', turnData);
+      console.log(`Captured ${snapshots.length} snapshots during turn`);
 
       // Pass the captured data to parent instead of sending to API
       if (onTurnDataCaptured) {
@@ -110,7 +115,54 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
       isSavingRef.current = false;
       setIsSaving(false);
     }
-  }, [player, turnStartTime, config, saveGame, scrapeData, onTurnDataCaptured]);
+  }, [player, turnStartTime, config, saveGame, scrapeData, onTurnDataCaptured, snapshots]);
+
+  // Function to capture a snapshot
+  const captureSnapshot = useCallback(async () => {
+    if (!isActive) return;
+
+    try {
+      const snapshotData = await scrapeSnapshotData();
+
+      if (!snapshotData) {
+        console.warn('No snapshot data available');
+        return;
+      }
+
+      // Add snapshot to collection with sequence number and timestamp
+      // Use functional updates to avoid depending on current state values
+      setSnapshots(prev => {
+        const newSnapshot = {
+          ...snapshotData,
+          sequenceNumber: prev.length, // Use array length as sequence
+          capturedAt: new Date().toISOString()
+        };
+        console.log(`Snapshot #${prev.length} captured`);
+        return [...prev, newSnapshot];
+      });
+    } catch (error) {
+      console.error('Error capturing snapshot:', error);
+    }
+  }, [isActive, scrapeSnapshotData]);
+
+  // Capture snapshots every 30 seconds during active turn
+  useEffect(() => {
+    if (!isActive) {
+      // Reset snapshots when turn becomes inactive
+      setSnapshots([]);
+      setSnapshotSequence(0);
+      return;
+    }
+
+    // Capture initial snapshot
+    captureSnapshot();
+
+    // Then capture every 30 seconds
+    const interval = setInterval(captureSnapshot, 30000);
+
+    return () => clearInterval(interval);
+  }, [isActive, captureSnapshot]);
+
 
   // Track if we've loaded the save for initial attract mode
   const initialSaveLoadedRef = useRef(false);

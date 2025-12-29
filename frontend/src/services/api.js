@@ -82,6 +82,29 @@ export const gameApi = {
       console.error('Health check failed:', error);
       throw error;
     }
+  },
+
+  async saveSnapshots(turnId, snapshots) {
+    try {
+      const response = await api.post(
+        `/api/game-turns/${turnId}/snapshots/batch`,
+        { snapshots }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Failed to save snapshots:', error);
+      throw error;
+    }
+  },
+
+  async getSnapshots(turnId) {
+    try {
+      const response = await api.get(`/api/game-turns/${turnId}/snapshots`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch snapshots:', error);
+      throw error;
+    }
   }
 };
 

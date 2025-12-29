@@ -96,6 +96,13 @@ export const useEmulator = (config = {}, approved = false) => {
     return null;
   }, []);
 
+  const scrapeSnapshotData = useCallback(async () => {
+    if (emulatorRef.current) {
+      return await emulatorRef.current.scrapeSnapshotData();
+    }
+    return null;
+  }, []);
+
   // Debug function to test memory access - call from browser console
   const debugMemory = useCallback(() => {
     if (emulatorRef.current) {
@@ -151,6 +158,7 @@ export const useEmulator = (config = {}, approved = false) => {
     saveGame,
     loadGame,
     scrapeData,
+    scrapeSnapshotData,
     debugMemory,
     simulateKeyPress,
     getRandomAttractButton

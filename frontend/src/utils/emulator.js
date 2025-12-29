@@ -11,6 +11,17 @@ class EmulatorManager {
     this.lastSaveState = null;
     this.lastScreenshot = null;
     this.lastSaveData = null;
+
+    // State tracking for delta logging
+    this._lastKnownState = {
+      location: null,
+      inBattle: false,
+      enemyParty: []
+    };
+
+    // Track playtime to detect backwards time
+    this._lastPlaytimeSeconds = 0;
+
     console.log('EmulatorManager initialized');
   }
 
@@ -79,6 +90,9 @@ class EmulatorManager {
         if (window.EJS_emulator && window.EJS_emulator.Module) {
           console.log('EJS_emulator.Module available:', !!window.EJS_emulator.Module);
         }
+
+        // Start state polling for delta logging
+        this.startStatePolling();
       };
 
       // Capture save state data when user saves
@@ -1147,6 +1161,12 @@ class EmulatorManager {
     SB1_COINS: 0x0294,                // 2 bytes - Game corner coins
     SB1_FLAGS: 0x0EE0,                // Flags array (0x120 bytes)
 
+    // Bag items (in SaveBlock1)
+    SB1_BAG_ITEMS: 0x03B8,            // Items pocket (30 slots x 4 bytes)
+    SB1_BAG_KEY_ITEMS: 0x0430,        // Key items pocket (30 slots x 4 bytes)
+    SB1_BAG_POKEBALLS: 0x0464,        // Pokeballs pocket (16 slots x 4 bytes)
+    SB1_BAG_BERRIES: 0x054C,          // Berries pocket (43 slots x 4 bytes)
+
     // Security key is in SaveBlock2, NOT SaveBlock1
     // Source: https://github.com/pret/pokefirered/blob/master/include/global.h
     SB2_SECURITY_KEY: 0x0F20,         // 4 bytes - XOR key for money/coins (in SaveBlock2!)
@@ -1160,9 +1180,25 @@ class EmulatorManager {
     SB2_PLAYTIME_SECONDS: 0x0011,     // 1 byte
     SB2_OPTIONS: 0x0013,              // Game options
 
+    // Pokedex progress (in SaveBlock2)
+    // Pokedex struct starts at 0x18, then:
+    // - owned array is at struct+0x04
+    // - seen array is at struct+0x38
+    SB2_POKEDEX_OWNED: 0x001C,        // 52 bytes - Caught/Owned flags (0x18 + 0x04)
+    SB2_POKEDEX_SEEN: 0x0050,         // 52 bytes - Seen flags (0x18 + 0x38)
+
     // Party data - in EWRAM, separate from saveblocks
     PARTY_COUNT: 0x02024284,          // 1 byte - Number of Pokemon in party (at start of party structure)
     PARTY_DATA: 0x02024284,           // Party Pokemon array (6 x 100 bytes) - count is embedded
+
+    // Battle state detection
+    GMAIN_BASE: 0x030030F0,           // gMain structure base in IWRAM
+    GMAIN_INBATTLE: 0x03003529,       // gMain.inBattle flag (gMain + 0x439, bit 1)
+    BATTLE_FLAGS: 0x02022B4C,         // 4 bytes - Battle type/state flags (in EWRAM)
+    ENEMY_PARTY_DATA: 0x0202402C,     // Enemy Pokemon array (6 x 100 bytes)
+
+    // Constants
+    ITEM_SLOT_SIZE: 4,                // 2 bytes itemId + 2 bytes quantity
   };
 
   // Pokemon Fire Red location names by map group and number
@@ -1447,10 +1483,7 @@ class EmulatorManager {
       const mapGroup = this.readGBAByte(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MAP_GROUP);
       const mapNum = this.readGBAByte(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MAP_NUM);
 
-      console.log(`Map read from SB1: group=${mapGroup}, number=${mapNum}`);
-
       if (mapGroup === null || mapNum === null) {
-        console.log('Could not read map group/number');
         return null;
       }
 
@@ -1459,12 +1492,10 @@ class EmulatorManager {
       const locationName = EmulatorManager.LOCATION_NAMES[key];
 
       if (locationName) {
-        console.log(`Location found: ${locationName}`);
         return locationName;
       }
 
       // Return raw coordinates if not in our lookup table
-      console.log(`Location not in lookup table: ${key}`);
       return `Map ${mapGroup}-${mapNum}`;
     } catch (error) {
       console.error('Error reading location:', error);
@@ -1530,6 +1561,17 @@ class EmulatorManager {
         console.log('Could not read playtime');
         return null;
       }
+
+      const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+      // Detect backwards time
+      if (this._lastPlaytimeSeconds > 0 && totalSeconds < this._lastPlaytimeSeconds) {
+        const delta = this._lastPlaytimeSeconds - totalSeconds;
+        console.warn(`⚠️ Playtime went BACKWARDS by ${delta} seconds! Was ${this._lastPlaytimeSeconds}s, now ${totalSeconds}s (${hours}:${minutes}:${seconds})`);
+        console.warn(`   This can happen during: save state loads, battles, or memory read errors`);
+      }
+
+      this._lastPlaytimeSeconds = totalSeconds;
 
       console.log(`Playtime: ${hours}:${minutes}:${seconds}`);
       return { hours, minutes, seconds };
@@ -1661,7 +1703,7 @@ class EmulatorManager {
       const defense = this.readGBAWord(address + 92);
       const speed = this.readGBAWord(address + 94);
 
-      console.log(`Pokemon at 0x${address.toString(16)}: ${nickname}, Lv${level}, HP ${currentHP}/${maxHP}`);
+      // Logging handled by delta tracking in pollStateChanges()
 
       return {
         nickname,
@@ -1675,6 +1717,423 @@ class EmulatorManager {
       };
     } catch (error) {
       console.error('Error reading Pokemon data:', error);
+      return null;
+    }
+  }
+
+  // Decode battle type flags into human-readable info
+  decodeBattleType(battleFlags) {
+    const types = [];
+
+    // Battle type flag definitions from pokefirered
+    if (battleFlags & 0x01) types.push('Double Battle');
+    if (battleFlags & 0x02) types.push('Link Battle');
+    if (battleFlags & 0x04) types.push('Multi Battle (unused in FR)');
+    if (battleFlags & 0x08) types.push('Battle Frontier');
+    if (battleFlags & 0x10) types.push('Ereader Trainer');
+    if (battleFlags & 0x20) types.push('Trainer Battle');
+    if (battleFlags & 0x40) types.push('Two Opponents');
+    if (battleFlags & 0x80) types.push('First Battle');
+    if (battleFlags & 0x100) types.push('Safari Zone');
+    if (battleFlags & 0x200) types.push('Catch Tutorial');
+    if (battleFlags & 0x400) types.push('Legendary');
+    if (battleFlags & 0x800) types.push('Regi Battle');
+    if (battleFlags & 0x1000) types.push('Ghost Battle');
+    if (battleFlags & 0x2000) types.push('Groudon/Kyogre Battle');
+    if (battleFlags & 0x4000) types.push('Rayquaza Battle');
+
+    return types.length > 0 ? types.join(', ') : 'No active battle';
+  }
+
+  // Read battle state
+  readBattleState() {
+    try {
+      // Method 1: Check gMain.inBattle flag (most reliable)
+      const inBattleByte = this.readGBAByte(EmulatorManager.ADDRESSES.GMAIN_INBATTLE);
+      const isInBattle = inBattleByte !== null && (inBattleByte & 0x02) !== 0;
+
+      // Method 2: Read battle type flags for additional information
+      const battleFlags = this.readGBADword(EmulatorManager.ADDRESSES.BATTLE_FLAGS);
+
+      // Debug first call
+      if (!this._battleDebugDone) {
+        console.log('🔍 Battle Detection Debug:');
+        console.log('  - gMain.inBattle address:', `0x${EmulatorManager.ADDRESSES.GMAIN_INBATTLE.toString(16)}`);
+        console.log('  - gMain.inBattle byte:', inBattleByte !== null ? `0x${inBattleByte.toString(16)}` : 'null');
+        console.log('  - Is in battle (bit 1):', isInBattle);
+        console.log('  - Battle flags address:', `0x${EmulatorManager.ADDRESSES.BATTLE_FLAGS.toString(16)}`);
+        console.log('  - Battle flags value:', battleFlags !== null ? `0x${battleFlags.toString(16)}` : 'null');
+        console.log('  - Decoded types:', this.decodeBattleType(battleFlags || 0));
+        this._battleDebugDone = true;
+      }
+
+      // Verify both methods agree (exclude IS_MASTER bit 0x04 from flags check)
+      if (battleFlags !== null && !this._battleDebugDone) {
+        const flagsIndicateBattle = (battleFlags & 0xFFFB) !== 0;
+        if (isInBattle !== flagsIndicateBattle) {
+          console.warn('⚠️ Battle detection mismatch:', {
+            inBattleFlag: isInBattle,
+            battleFlagsActive: flagsIndicateBattle,
+            flags: '0x' + battleFlags.toString(16)
+          });
+        }
+      }
+
+      // Battle state tracking (delta logging handled by pollStateChanges)
+      this._lastBattleState = isInBattle;
+
+      return {
+        isInBattle,
+        battleType: battleFlags || 0,
+        battleTypeDescription: this.decodeBattleType(battleFlags || 0)
+      };
+    } catch (error) {
+      console.error('Error reading battle state:', error);
+      return null;
+    }
+  }
+
+  // Read enemy party (only when in battle)
+  readEnemyParty() {
+    try {
+      const pokemonSize = 100;
+      const dataStart = EmulatorManager.ADDRESSES.ENEMY_PARTY_DATA;
+      const party = [];
+
+      // Read up to 6 Pokemon, stopping when we hit an empty slot (PID = 0)
+      for (let i = 0; i < 6; i++) {
+        const pokemonAddr = dataStart + (i * pokemonSize);
+        const pid = this.readGBADword(pokemonAddr);
+
+        // Empty slot has PID of 0
+        if (pid === null || pid === 0) {
+          break;
+        }
+
+        const pokemonData = this.readPokemonData(pokemonAddr);
+        if (pokemonData) {
+          party.push(pokemonData);
+        }
+      }
+
+      // Reduced logging - only log if party size changed
+      if (!this._lastEnemyPartySize || this._lastEnemyPartySize !== party.length) {
+        console.log(`Enemy party count: ${party.length}`);
+        this._lastEnemyPartySize = party.length;
+      }
+      return party;
+    } catch (error) {
+      console.error('Error reading enemy party:', error);
+      return [];
+    }
+  }
+
+  // Read player position
+  readPlayerPosition() {
+    try {
+      const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
+      if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
+        return null;
+      }
+
+      const x = this.readGBAWord(sb1Ptr + EmulatorManager.ADDRESSES.SB1_X_POS);
+      const y = this.readGBAWord(sb1Ptr + EmulatorManager.ADDRESSES.SB1_Y_POS);
+
+      if (x === null || y === null) return null;
+
+      // Reduced logging - position changes frequently, don't spam console
+      return { x, y };
+    } catch (error) {
+      console.error('Error reading player position:', error);
+      return null;
+    }
+  }
+
+  // Read Pokedex progress
+  readPokedexProgress() {
+    try {
+      const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
+
+      // Debug first call
+      if (!this._pokedexDebugDone) {
+        console.log('🔍 Pokedex Debug:');
+        console.log('  - SaveBlock2 PTR address:', `0x${EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR.toString(16)}`);
+        console.log('  - SaveBlock2 pointer value:', sb2Ptr ? `0x${sb2Ptr.toString(16)}` : 'null');
+        console.log('  - Owned offset:', `0x${EmulatorManager.ADDRESSES.SB2_POKEDEX_OWNED.toString(16)}`);
+        console.log('  - Seen offset:', `0x${EmulatorManager.ADDRESSES.SB2_POKEDEX_SEEN.toString(16)}`);
+        this._pokedexDebugDone = true;
+      }
+
+      if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
+        console.warn(`Invalid SaveBlock2 pointer: ${sb2Ptr ? '0x' + sb2Ptr.toString(16) : 'null'}`);
+        return null;
+      }
+
+      // Read 52 bytes of flags (416 bits)
+      const seenAddr = sb2Ptr + EmulatorManager.ADDRESSES.SB2_POKEDEX_SEEN;
+      const ownedAddr = sb2Ptr + EmulatorManager.ADDRESSES.SB2_POKEDEX_OWNED;
+
+      const seenFlags = this.readGBABytes(seenAddr, 52);
+      const ownedFlags = this.readGBABytes(ownedAddr, 52);
+
+      if (!seenFlags || !ownedFlags) {
+        console.warn('Failed to read Pokedex flag bytes');
+        return null;
+      }
+
+      // Debug: Show first bytes
+      if (!this._pokedexBytesShown) {
+        console.log('  - Seen first 4 bytes:', seenFlags.slice(0, 4).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+        console.log('  - Owned first 4 bytes:', ownedFlags.slice(0, 4).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+        this._pokedexBytesShown = true;
+      }
+
+      // Count set bits
+      const countBits = (bytes) => {
+        let count = 0;
+        for (const byte of bytes) {
+          let b = byte;
+          while (b) {
+            count += b & 1;
+            b >>= 1;
+          }
+        }
+        return count;
+      };
+
+      const seen = countBits(seenFlags);
+      const caught = countBits(ownedFlags);
+
+      // Reduced logging - only log if counts changed
+      if (!this._lastPokedex || this._lastPokedex.caught !== caught || this._lastPokedex.seen !== seen) {
+        console.log(`📖 Pokedex: ${caught} caught, ${seen} seen`);
+        this._lastPokedex = { caught, seen };
+      }
+
+      return { caught, seen };
+    } catch (error) {
+      console.error('Error reading Pokedex:', error);
+      return null;
+    }
+  }
+
+  // Count bag items
+  readBagItemsCount() {
+    try {
+      const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
+      if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
+        console.log('Invalid saveblock1 pointer for bag');
+        return null;
+      }
+
+      // Get security key for decryption
+      const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
+      const securityKey = sb2Ptr ? this.readGBADword(
+        sb2Ptr + EmulatorManager.ADDRESSES.SB2_SECURITY_KEY
+      ) : null;
+
+      const pockets = [
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_ITEMS, count: 30 },
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_KEY_ITEMS, count: 30 },
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_POKEBALLS, count: 16 },
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_BERRIES, count: 43 }
+      ];
+
+      let totalItems = 0;
+
+      for (const pocket of pockets) {
+        for (let i = 0; i < pocket.count; i++) {
+          const addr = sb1Ptr + pocket.offset + (i * EmulatorManager.ADDRESSES.ITEM_SLOT_SIZE);
+          const itemId = this.readGBAWord(addr);
+
+          // Item ID of 0 means empty slot
+          if (itemId === null || itemId === 0) {
+            continue;
+          }
+
+          totalItems++;
+        }
+      }
+
+      // Reduced logging - only log if count changed significantly (by 5+)
+      if (!this._lastBagCount || Math.abs(this._lastBagCount - totalItems) >= 5) {
+        console.log(`🎒 Bag items count: ${totalItems}`);
+        this._lastBagCount = totalItems;
+      }
+      return totalItems;
+    } catch (error) {
+      console.error('Error reading bag items:', error);
+      return null;
+    }
+  }
+
+  // Poll game state and log only changes (delta logging)
+  pollStateChanges() {
+    if (!this.isRunning) return;
+
+    try {
+      // Read current state
+      const location = this.readCurrentLocation();
+      const battleState = this.readBattleState();
+      const inBattle = battleState?.isInBattle || false;
+
+      // Check for location change
+      if (location && location !== this._lastKnownState.location) {
+        console.log(`📍 Location changed: ${this._lastKnownState.location || 'Unknown'} → ${location}`);
+        this._lastKnownState.location = location;
+      }
+
+      // Check for battle state change
+      if (inBattle !== this._lastKnownState.inBattle) {
+        if (inBattle) {
+          console.log(`⚔️ Entered battle`);
+        } else {
+          console.log(`✅ Left battle`);
+        }
+        this._lastKnownState.inBattle = inBattle;
+        this._lastKnownState.enemyParty = []; // Reset enemy tracking
+      }
+
+      // Check for enemy party changes (only when in battle)
+      if (inBattle) {
+        const enemyParty = this.readEnemyParty();
+        if (enemyParty && enemyParty.length > 0) {
+          // Check if enemy party composition or HP changed
+          let hasChange = false;
+          const changes = [];
+
+          if (enemyParty.length !== this._lastKnownState.enemyParty.length) {
+            hasChange = true;
+          } else {
+            enemyParty.forEach((pokemon, i) => {
+              const lastPokemon = this._lastKnownState.enemyParty[i];
+              if (!lastPokemon) {
+                hasChange = true;
+                changes.push(`  + ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level} appeared`);
+              } else {
+                // Check for species change
+                if (pokemon.species !== lastPokemon.species || pokemon.nickname !== lastPokemon.nickname) {
+                  hasChange = true;
+                  changes.push(`  ↻ Switched to ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level}`);
+                }
+                // Check for HP change
+                else if (pokemon.currentHP !== lastPokemon.currentHP) {
+                  hasChange = true;
+                  const hpDelta = pokemon.currentHP - lastPokemon.currentHP;
+                  const deltaStr = hpDelta > 0 ? `+${hpDelta}` : `${hpDelta}`;
+                  changes.push(`  ❤️ ${pokemon.species || pokemon.nickname}'s HP: ${lastPokemon.currentHP} → ${pokemon.currentHP} (${deltaStr})`);
+                }
+              }
+            });
+          }
+
+          if (hasChange) {
+            console.log(`👾 Enemy party changed:`);
+            if (changes.length > 0) {
+              changes.forEach(change => console.log(change));
+            } else {
+              enemyParty.forEach((pokemon, i) => {
+                console.log(`  ${i + 1}. ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level || '?'} - HP: ${pokemon.currentHP || 0}/${pokemon.maxHP || 0}`);
+              });
+            }
+            this._lastKnownState.enemyParty = enemyParty.map(p => ({ ...p }));
+          }
+        }
+      }
+    } catch (error) {
+      // Silent - don't spam console with errors
+    }
+  }
+
+  // Start polling for state changes (call after game starts)
+  startStatePolling() {
+    if (this._statePollingInterval) return; // Already polling
+
+    console.log('🔄 Started state change polling (1Hz)');
+    this._statePollingInterval = setInterval(() => {
+      this.pollStateChanges();
+    }, 1000); // Poll every 1 second
+  }
+
+  // Stop polling
+  stopStatePolling() {
+    if (this._statePollingInterval) {
+      clearInterval(this._statePollingInterval);
+      this._statePollingInterval = null;
+      console.log('⏸️ Stopped state change polling');
+    }
+  }
+
+  // Main snapshot scraper (combines all data)
+  async scrapeSnapshotData() {
+    // Reduced logging - snapshots are called every 30s, don't spam console
+
+    if (!this.isRunning) {
+      console.log('Emulator not running, returning null');
+      return null;
+    }
+
+    try {
+      // Get existing data
+      const baseData = {
+        location: this.readCurrentLocation(),
+        badges: this.readBadgeCount(),
+        playtime: this.readPlaytime(),
+        money: this.readMoney(),
+        party: this.readPartyData()
+      };
+
+      // Get new snapshot data
+      const position = this.readPlayerPosition();
+      const battleState = this.readBattleState();
+      const pokedex = this.readPokedexProgress();
+      const bagCount = this.readBagItemsCount();
+
+      // Convert playtime to seconds
+      let playtimeSeconds = 0;
+      const playtimeObj = baseData.playtime;
+      if (playtimeObj && typeof playtimeObj === 'object') {
+        playtimeSeconds = (playtimeObj.hours || 0) * 3600 +
+                         (playtimeObj.minutes || 0) * 60 +
+                         (playtimeObj.seconds || 0);
+      }
+
+      // Validate that we got meaningful data before creating snapshot
+      // During battle transitions, SaveBlock pointers can be temporarily invalid
+      const hasValidData = baseData.location !== null ||
+                          baseData.money !== null ||
+                          playtimeSeconds > 0;
+
+      if (!hasValidData) {
+        console.warn('⚠️ Skipping snapshot: memory reads returned all null (likely during battle transition)');
+        return null;
+      }
+
+      const snapshotData = {
+        location: baseData.location,
+        money: baseData.money,
+        badgeCount: baseData.badges,
+        inGamePlaytime: playtimeSeconds,
+        playerX: position?.x || null,
+        playerY: position?.y || null,
+        isInBattle: battleState?.isInBattle || false,
+        battleType: battleState?.battleType || null,
+        enemyParty: null,
+        pokedexSeenCount: pokedex?.seen || null,
+        pokedexCaughtCount: pokedex?.caught || null,
+        bagItemsCount: bagCount,
+        partyData: baseData.party
+      };
+
+      // Only read enemy party if in battle
+      if (snapshotData.isInBattle) {
+        snapshotData.enemyParty = this.readEnemyParty();
+      }
+
+      // Logging handled by individual read methods when values change
+      return snapshotData;
+    } catch (error) {
+      console.error('Failed to scrape snapshot data:', error);
       return null;
     }
   }
@@ -1719,6 +2178,7 @@ class EmulatorManager {
   destroy() {
     console.log('Destroying emulator instance...');
     this.isRunning = false;
+    this.stopStatePolling();
   }
 
   // Simulate a button press for attract mode
