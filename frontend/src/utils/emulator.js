@@ -22,7 +22,39 @@ class EmulatorManager {
     // Track playtime to detect backwards time
     this._lastPlaytimeSeconds = 0;
 
+    // Track party Pokemon levels by PID to detect level ups
+    // Map of pid -> {nickname, level}
+    this._lastKnownParty = new Map();
+
+    // Event collection for game state server integration
+    this._pendingEvents = [];
+    this._gameStateConfig = {
+      enabled: import.meta.env.VITE_GAMESTATE_SERVER_ENABLED === 'true',
+      port: parseInt(import.meta.env.VITE_GAMESTATE_SERVER_PORT || '3333'),
+      interval: Math.max(100, Math.min(5000,
+        parseInt(import.meta.env.VITE_GAMESTATE_SERVER_INTERVAL || '1000')))
+    };
+    this._gameStateInterval = null;
+    this._gameStateServerOffline = false; // Track if server is down to reduce error spam
+
     console.log('EmulatorManager initialized');
+  }
+
+  // Record game state event for external server (if enabled)
+  _recordEvent(type, data = {}) {
+    // PERFORMANCE: Early exit if disabled (single boolean check)
+    if (!this._gameStateConfig.enabled) return;
+
+    // SAFETY: Prevent memory leak from unbounded array growth
+    if (this._pendingEvents.length >= 100) {
+      this._pendingEvents.shift(); // Remove oldest event
+    }
+
+    this._pendingEvents.push({
+      type,
+      timestamp: new Date().toISOString(),
+      data
+    });
   }
 
   async initialize() {
@@ -1655,7 +1687,7 @@ class EmulatorManager {
         }
       }
 
-      console.log(`Party count (detected): ${party.length}`);
+      // Party count logging removed - tracked by delta logging
       return party;
     } catch (error) {
       console.error('Error reading party data:', error);
@@ -1967,7 +1999,88 @@ class EmulatorManager {
     }
   }
 
+  /*
+   * ============================================================================
+   * GAME STATE TRACKING SYSTEMS - Two Independent Systems
+   * ============================================================================
+   *
+   * This emulator implements TWO distinct game state tracking systems with
+   * different purposes and data formats:
+   *
+   * 1. DELTA EVENT SYSTEM (Real-time event stream)
+   *    - Purpose: Send real-time game events to external localhost server
+   *    - Format: Delta events (changes as they occur) + current state snapshot
+   *    - Frequency: Configurable (default 1 second batches)
+   *    - Use cases: Ambient lighting, OBS overlays, analytics, Discord bots
+   *    - Methods: pollStateChanges(), _recordEvent(), sendGameStateUpdate()
+   *    - Config: VITE_GAMESTATE_SERVER_ENABLED, VITE_GAMESTATE_SERVER_PORT
+   *
+   *    Example payload:
+   *    {
+   *      "timestamp": "2025-12-29T02:15:30.123Z",
+   *      "events": [
+   *        {
+   *          "type": "location_change",
+   *          "timestamp": "2025-12-29T02:15:30.120Z",
+   *          "data": { "from": "Route 1", "to": "Pallet Town" }
+   *        },
+   *        {
+   *          "type": "battle_start",
+   *          "timestamp": "2025-12-29T02:15:35.456Z",
+   *          "data": {}
+   *        }
+   *      ],
+   *      "currentState": {
+   *        "location": "Pallet Town",
+   *        "inBattle": true,
+   *        "money": 3000,
+   *        "badges": 0,
+   *        "playtime": 4275,
+   *        "party": [{ "nickname": "CHARIZARD", "level": 36, "currentHp": 120, "maxHp": 135 }]
+   *      }
+   *    }
+   *
+   * 2. SNAPSHOT SYSTEM (Periodic full state capture)
+   *    - Purpose: Capture complete game state for turn history/database
+   *    - Format: Full state snapshot (all data at point in time)
+   *    - Frequency: Every 30 seconds during active gameplay
+   *    - Use cases: Turn replays, progress tracking, admin panel display
+   *    - Methods: scrapeSnapshotData()
+   *    - Storage: Saved to PostgreSQL database via API
+   *
+   *    Example snapshot:
+   *    {
+   *      "location": "Pallet Town",
+   *      "money": 3000,
+   *      "badgeCount": 0,
+   *      "inGamePlaytime": 4275,
+   *      "playerX": 10,
+   *      "playerY": 15,
+   *      "isInBattle": false,
+   *      "pokedexSeenCount": 6,
+   *      "pokedexCaughtCount": 4,
+   *      "bagItemsCount": 12,
+   *      "partyData": [...]
+   *    }
+   *
+   * KEY DIFFERENCES:
+   * - Delta events = CHANGES ONLY (what happened)
+   * - Snapshots = FULL STATE (complete picture at moment in time)
+   * - Delta events = Real-time streaming
+   * - Snapshots = Periodic checkpoints
+   * - Delta events = Optional external integration
+   * - Snapshots = Core game history feature
+   *
+   * NO REDUNDANCY:
+   * - pollStateChanges() detects changes and records delta events
+   * - scrapeSnapshotData() reads full state independently
+   * - Both use same underlying memory read methods (readLocation, etc.)
+   * - No duplication of logic, just different purposes
+   * ============================================================================
+   */
+
   // Poll game state and log only changes (delta logging)
+  // Also records delta events for external server if enabled
   pollStateChanges() {
     if (!this.isRunning) return;
 
@@ -1980,6 +2093,10 @@ class EmulatorManager {
       // Check for location change
       if (location && location !== this._lastKnownState.location) {
         console.log(`📍 Location changed: ${this._lastKnownState.location || 'Unknown'} → ${location}`);
+        this._recordEvent('location_change', {
+          from: this._lastKnownState.location || 'Unknown',
+          to: location
+        });
         this._lastKnownState.location = location;
       }
 
@@ -1987,8 +2104,10 @@ class EmulatorManager {
       if (inBattle !== this._lastKnownState.inBattle) {
         if (inBattle) {
           console.log(`⚔️ Entered battle`);
+          this._recordEvent('battle_start', {});
         } else {
           console.log(`✅ Left battle`);
+          this._recordEvent('battle_end', {});
         }
         this._lastKnownState.inBattle = inBattle;
         this._lastKnownState.enemyParty = []; // Reset enemy tracking
@@ -2010,11 +2129,23 @@ class EmulatorManager {
               if (!lastPokemon) {
                 hasChange = true;
                 changes.push(`  + ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level} appeared`);
+                this._recordEvent('enemy_appeared', {
+                  pokemon: pokemon.species || pokemon.nickname || 'Unknown',
+                  level: pokemon.level,
+                  hp: pokemon.currentHP,
+                  maxHp: pokemon.maxHP
+                });
               } else {
                 // Check for species change
                 if (pokemon.species !== lastPokemon.species || pokemon.nickname !== lastPokemon.nickname) {
                   hasChange = true;
                   changes.push(`  ↻ Switched to ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level}`);
+                  this._recordEvent('enemy_switched', {
+                    pokemon: pokemon.species || pokemon.nickname || 'Unknown',
+                    level: pokemon.level,
+                    hp: pokemon.currentHP,
+                    maxHp: pokemon.maxHP
+                  });
                 }
                 // Check for HP change
                 else if (pokemon.currentHP !== lastPokemon.currentHP) {
@@ -2022,6 +2153,12 @@ class EmulatorManager {
                   const hpDelta = pokemon.currentHP - lastPokemon.currentHP;
                   const deltaStr = hpDelta > 0 ? `+${hpDelta}` : `${hpDelta}`;
                   changes.push(`  ❤️ ${pokemon.species || pokemon.nickname}'s HP: ${lastPokemon.currentHP} → ${pokemon.currentHP} (${deltaStr})`);
+                  this._recordEvent('enemy_hp_change', {
+                    pokemon: pokemon.species || pokemon.nickname || 'Unknown',
+                    oldHp: lastPokemon.currentHP,
+                    newHp: pokemon.currentHP,
+                    delta: hpDelta
+                  });
                 }
               }
             });
@@ -2040,8 +2177,120 @@ class EmulatorManager {
           }
         }
       }
+
+      // Check for party Pokemon level ups
+      const party = this.readPartyData();
+      if (party && Array.isArray(party) && party.length > 0) {
+        party.forEach((pokemon) => {
+          if (!pokemon || !pokemon.pid) return;
+
+          const pid = pokemon.pid;
+          const currentLevel = pokemon.level || 0;
+          const nickname = pokemon.nickname || 'Unknown';
+
+          // Check if we've seen this Pokemon before
+          if (this._lastKnownParty.has(pid)) {
+            const lastData = this._lastKnownParty.get(pid);
+            const lastLevel = lastData.level || 0;
+
+            // Detect level up
+            if (currentLevel > lastLevel) {
+              const levelGain = currentLevel - lastLevel;
+              console.log(`🆙 ${nickname} leveled up! Lv.${lastLevel} → Lv.${currentLevel} (+${levelGain})`);
+              this._recordEvent('level_up', {
+                pokemon: nickname,
+                oldLevel: lastLevel,
+                newLevel: currentLevel
+              });
+            }
+          }
+
+          // Update tracking
+          this._lastKnownParty.set(pid, {
+            nickname,
+            level: currentLevel
+          });
+        });
+
+        // Clean up Pokemon that are no longer in party (released, deposited in PC)
+        const currentPids = new Set(party.map(p => p.pid).filter(Boolean));
+        for (const pid of this._lastKnownParty.keys()) {
+          if (!currentPids.has(pid)) {
+            this._lastKnownParty.delete(pid);
+          }
+        }
+      }
     } catch (error) {
       // Silent - don't spam console with errors
+    }
+  }
+
+  // Send collected game state events to localhost server (if enabled)
+  // NOTE: This sends delta events PLUS current state snapshot for context
+  // For turn history snapshots, see scrapeSnapshotData() (saved to database)
+  async sendGameStateUpdate() {
+    // PERFORMANCE: Early exit if disabled
+    if (!this._gameStateConfig.enabled) return;
+
+    // PERFORMANCE: Early exit if no events to send
+    if (this._pendingEvents.length === 0) return;
+
+    try {
+      // SAFETY: Cap events array to prevent memory bloat
+      if (this._pendingEvents.length > 100) {
+        console.warn('Event buffer overflow, dropping old events');
+        this._pendingEvents = this._pendingEvents.slice(-100);
+      }
+
+      // Collect current state snapshot for context
+      const currentState = {
+        location: this._lastKnownState.location || null,
+        inBattle: this._lastKnownState.inBattle || false,
+        money: this.readMoney(),
+        badges: this.readBadgeCount(),
+        playtime: this._lastPlaytimeSeconds,
+        party: (this.readPartyData() || []).map(p => ({
+          nickname: p.nickname,
+          level: p.level,
+          currentHp: p.currentHP,
+          maxHp: p.maxHP
+        }))
+      };
+
+      // Build payload - delta events + current state
+      const payload = {
+        timestamp: new Date().toISOString(),
+        events: this._pendingEvents.splice(0), // Empty the array
+        currentState
+      };
+
+      // Send to localhost server
+      const url = `http://localhost:${this._gameStateConfig.port}/gamestate`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        // PERFORMANCE: Don't wait too long if server is down
+        signal: AbortSignal.timeout(2000)
+      });
+
+      if (!response.ok) {
+        console.warn(`Game state server returned ${response.status}`);
+      } else {
+        // Reset offline flag on successful send
+        this._gameStateServerOffline = false;
+      }
+    } catch (error) {
+      // Silently fail if server is offline - don't spam console
+      // Only log on first failure
+      if (!this._gameStateServerOffline) {
+        console.warn(`Game state server not responding at localhost:${this._gameStateConfig.port} - further errors will be suppressed`);
+        this._gameStateServerOffline = true;
+      }
+      // SAFETY: Clear pending events to prevent memory leak
+      this._pendingEvents = [];
     }
   }
 
@@ -2053,6 +2302,14 @@ class EmulatorManager {
     this._statePollingInterval = setInterval(() => {
       this.pollStateChanges();
     }, 1000); // Poll every 1 second
+
+    // Start game state server updates if enabled
+    if (this._gameStateConfig.enabled) {
+      console.log(`🌐 Game state server enabled - sending updates to localhost:${this._gameStateConfig.port} every ${this._gameStateConfig.interval}ms`);
+      this._gameStateInterval = setInterval(() => {
+        this.sendGameStateUpdate();
+      }, this._gameStateConfig.interval);
+    }
   }
 
   // Stop polling
@@ -2062,9 +2319,19 @@ class EmulatorManager {
       this._statePollingInterval = null;
       console.log('⏸️ Stopped state change polling');
     }
+
+    // Stop game state updates
+    if (this._gameStateInterval) {
+      clearInterval(this._gameStateInterval);
+      this._gameStateInterval = null;
+      console.log('⏸️ Stopped game state updates');
+    }
   }
 
   // Main snapshot scraper (combines all data)
+  // NOTE: This returns FULL STATE SNAPSHOT (complete game state at point in time)
+  // For delta events (changes only), see pollStateChanges() and sendGameStateUpdate()
+  // See documentation above pollStateChanges() for detailed comparison of both systems
   async scrapeSnapshotData() {
     // Reduced logging - snapshots are called every 30s, don't spam console
 
