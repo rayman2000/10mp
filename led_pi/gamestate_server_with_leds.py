@@ -80,23 +80,56 @@ COLOR_RED = (255, 0, 0)
 
 # Pokemon Type Colors (Gen 3)
 TYPE_COLORS = {
-    "normal":   (168, 168, 120),
-    "fire":     (240, 128, 48),
-    "water":    (104, 144, 240),
-    "grass":    (120, 200, 80),
-    "electric": (248, 208, 48),
-    "ice":      (152, 216, 216),
-    "fighting": (192, 48, 40),
-    "poison":   (160, 64, 160),
-    "ground":   (224, 192, 104),
-    "flying":   (168, 144, 240),
-    "psychic":  (248, 88, 136),
-    "bug":      (168, 184, 32),
-    "rock":     (184, 160, 56),
-    "ghost":    (112, 88, 152),
-    "dragon":   (112, 56, 248),
-    "steel":    (184, 184, 208),
-    "dark":     (112, 88, 72),
+    # Normal: Warm beige/grey (dimmed to avoid looking pure white)
+    "normal":   (160, 160, 130),
+    
+    # Fire: Pure, sharp Orange-Red
+    "fire":     (255, 80, 0),
+    
+    # Water: Deep, rich Blue (removed green tint)
+    "water":    (0, 80, 255),
+    
+    # Grass: Pure Green (removed yellow tint)
+    "grass":    (0, 200, 20),
+    
+    # Electric: Pure Yellow (Red/Green mix, Blue dropped to 0)
+    "electric": (255, 220, 0),
+    
+    # Ice: Cyan/Turquoise (Distinct from Water)
+    "ice":      (0, 200, 200),
+    
+    # Fighting: Deep Crimson/Blood Red (Distinct from Fire)
+    "fighting": (200, 20, 20),
+    
+    # Poison: Deep Violet (Distinct from Psychic)
+    "poison":   (150, 0, 200),
+    
+    # Ground: Earthy Gold/Orange (Distinct from Rock)
+    "ground":   (180, 140, 20),
+    
+    # Flying: Light Sky Blue/Indigo
+    "flying":   (100, 120, 255),
+    
+    # Psychic: Hot Pink/Magenta
+    "psychic":  (255, 20, 150),
+    
+    # Bug: Lime Green (Distinct from Grass)
+    "bug":      (160, 220, 0),
+    
+    # Rock: Desaturated Brown/Grey
+    "rock":     (120, 100, 80),
+    
+    # Ghost: Dark Indigo/Purple
+    "ghost":    (80, 40, 180),
+    
+    # Dragon: Deep Royal Blue/Purple
+    "dragon":   (60, 0, 255),
+    
+    # Steel: Cool Blue-Grey (Distinct from Normal)
+    "steel":    (100, 140, 160),
+    
+    # Dark: Very dim Red/Brown (Hard on LEDs, used low intensity)
+    "dark":     (60, 40, 40),
 }
 
 # Pokemon name to type mapping (Kanto 151)
@@ -551,7 +584,7 @@ class LedController:
             self.pixels[i] = COLOR_OFF
             self.pixels[LED_COUNT - 1 - i] = COLOR_OFF
             self.pixels.show()
-            time.sleep(0.02)
+            time.sleep(0.06)
 
         time.sleep(0.1)
 
@@ -560,7 +593,7 @@ class LedController:
             self.pixels[center + i] = c_new
             self.pixels[center - 1 - i] = c_new
             self.pixels.show()
-            time.sleep(0.03)
+            time.sleep(0.1)
 
         # Return to fighting with new type
         self.set_state("FIGHTING", {"type": new_type})
