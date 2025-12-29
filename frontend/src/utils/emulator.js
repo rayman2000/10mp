@@ -1567,6 +1567,101 @@ class EmulatorManager {
     '15:1': "Mr. Pokemon's House",
   };
 
+  // Pokemon species ID to name mapping (Gen III National Dex)
+  // Source: https://bulbapedia.bulbagarden.net/wiki/List_of_Pok%C3%A9mon_by_index_number_(Generation_III)
+  static SPECIES_NAMES = {
+    0: 'None',
+    1: 'Bulbasaur', 2: 'Ivysaur', 3: 'Venusaur',
+    4: 'Charmander', 5: 'Charmeleon', 6: 'Charizard',
+    7: 'Squirtle', 8: 'Wartortle', 9: 'Blastoise',
+    10: 'Caterpie', 11: 'Metapod', 12: 'Butterfree',
+    13: 'Weedle', 14: 'Kakuna', 15: 'Beedrill',
+    16: 'Pidgey', 17: 'Pidgeotto', 18: 'Pidgeot',
+    19: 'Rattata', 20: 'Raticate',
+    21: 'Spearow', 22: 'Fearow',
+    23: 'Ekans', 24: 'Arbok',
+    25: 'Pikachu', 26: 'Raichu',
+    27: 'Sandshrew', 28: 'Sandslash',
+    29: 'Nidoran♀', 30: 'Nidorina', 31: 'Nidoqueen',
+    32: 'Nidoran♂', 33: 'Nidorino', 34: 'Nidoking',
+    35: 'Clefairy', 36: 'Clefable',
+    37: 'Vulpix', 38: 'Ninetales',
+    39: 'Jigglypuff', 40: 'Wigglytuff',
+    41: 'Zubat', 42: 'Golbat',
+    43: 'Oddish', 44: 'Gloom', 45: 'Vileplume',
+    46: 'Paras', 47: 'Parasect',
+    48: 'Venonat', 49: 'Venomoth',
+    50: 'Diglett', 51: 'Dugtrio',
+    52: 'Meowth', 53: 'Persian',
+    54: 'Psyduck', 55: 'Golduck',
+    56: 'Mankey', 57: 'Primeape',
+    58: 'Growlithe', 59: 'Arcanine',
+    60: 'Poliwag', 61: 'Poliwhirl', 62: 'Poliwrath',
+    63: 'Abra', 64: 'Kadabra', 65: 'Alakazam',
+    66: 'Machop', 67: 'Machoke', 68: 'Machamp',
+    69: 'Bellsprout', 70: 'Weepinbell', 71: 'Victreebel',
+    72: 'Tentacool', 73: 'Tentacruel',
+    74: 'Geodude', 75: 'Graveler', 76: 'Golem',
+    77: 'Ponyta', 78: 'Rapidash',
+    79: 'Slowpoke', 80: 'Slowbro',
+    81: 'Magnemite', 82: 'Magneton',
+    83: "Farfetch'd",
+    84: 'Doduo', 85: 'Dodrio',
+    86: 'Seel', 87: 'Dewgong',
+    88: 'Grimer', 89: 'Muk',
+    90: 'Shellder', 91: 'Cloyster',
+    92: 'Gastly', 93: 'Haunter', 94: 'Gengar',
+    95: 'Onix',
+    96: 'Drowzee', 97: 'Hypno',
+    98: 'Krabby', 99: 'Kingler',
+    100: 'Voltorb', 101: 'Electrode',
+    102: 'Exeggcute', 103: 'Exeggutor',
+    104: 'Cubone', 105: 'Marowak',
+    106: 'Hitmonlee', 107: 'Hitmonchan',
+    108: 'Lickitung',
+    109: 'Koffing', 110: 'Weezing',
+    111: 'Rhyhorn', 112: 'Rhydon',
+    113: 'Chansey',
+    114: 'Tangela',
+    115: 'Kangaskhan',
+    116: 'Horsea', 117: 'Seadra',
+    118: 'Goldeen', 119: 'Seaking',
+    120: 'Staryu', 121: 'Starmie',
+    122: 'Mr. Mime',
+    123: 'Scyther',
+    124: 'Jynx',
+    125: 'Electabuzz',
+    126: 'Magmar',
+    127: 'Pinsir',
+    128: 'Tauros',
+    129: 'Magikarp', 130: 'Gyarados',
+    131: 'Lapras',
+    132: 'Ditto',
+    133: 'Eevee', 134: 'Vaporeon', 135: 'Jolteon', 136: 'Flareon',
+    137: 'Porygon',
+    138: 'Omanyte', 139: 'Omastar',
+    140: 'Kabuto', 141: 'Kabutops',
+    142: 'Aerodactyl',
+    143: 'Snorlax',
+    144: 'Articuno', 145: 'Zapdos', 146: 'Moltres',
+    147: 'Dratini', 148: 'Dragonair', 149: 'Dragonite',
+    150: 'Mewtwo',
+    151: 'Mew',
+    // Gen 2 (Johto)
+    152: 'Chikorita', 153: 'Bayleef', 154: 'Meganium',
+    155: 'Cyndaquil', 156: 'Quilava', 157: 'Typhlosion',
+    158: 'Totodile', 159: 'Croconaw', 160: 'Feraligatr',
+    169: 'Crobat',
+    186: 'Politoed',
+    196: 'Espeon', 197: 'Umbreon',
+    208: 'Steelix',
+    230: 'Kingdra',
+    // Gen 3 (Hoenn) - Common ones
+    252: 'Treecko', 253: 'Grovyle', 254: 'Sceptile',
+    255: 'Torchic', 256: 'Combusken', 257: 'Blaziken',
+    258: 'Mudkip', 259: 'Marshtomp', 260: 'Swampert',
+  };
+
   // Helper methods to read specific memory addresses
   readPlayerName() {
     try {
@@ -1840,11 +1935,75 @@ class EmulatorManager {
         return null;
       }
 
+      // Read OT ID for decryption
+      const otId = this.readGBADword(address + 4);
+
       // Read nickname (bytes 8-17)
       const nicknameBytes = this.readGBABytes(address + 8, 10);
       const nickname = nicknameBytes ? this.convertPokemonText(
         nicknameBytes.filter(b => b !== 0xFF && b !== 0x00)
       ) : 'Unknown';
+
+      // Decrypt species from Growth substructure (bytes 32-43)
+      // The 48 encrypted bytes are split into 4 substructures of 12 bytes each
+      // Substructure order determined by (pid % 24)
+      // Growth substructure contains species at offset 0-1
+      let species = null;
+      let speciesName = null;
+
+      if (otId !== null && otId !== 0) {
+        try {
+          const encryptionKey = pid ^ otId;
+
+          // Determine substructure order (0-23 maps to which substructure is first)
+          // Growth=G, Attacks=A, EVs=E, Misc=M
+          const substructureOrders = [
+            [0,1,2,3], [0,1,3,2], [0,2,1,3], [0,2,3,1], [0,3,1,2], [0,3,2,1], // G first
+            [1,0,2,3], [1,0,3,2], [1,2,0,3], [1,2,3,0], [1,3,0,2], [1,3,2,0], // A first
+            [2,0,1,3], [2,0,3,1], [2,1,0,3], [2,1,3,0], [2,3,0,1], [2,3,1,0], // E first
+            [3,0,1,2], [3,0,2,1], [3,1,0,2], [3,1,2,0], [3,2,0,1], [3,2,1,0]  // M first
+          ];
+
+          const orderIndex = pid % 24;
+          const order = substructureOrders[orderIndex];
+
+          if (order && Array.isArray(order)) {
+            // Find which encrypted block contains Growth (index 0 in original order)
+            const growthBlockIndex = order.indexOf(0);
+
+            if (growthBlockIndex !== -1) {
+              // Read the encrypted Growth block (12 bytes)
+              const encryptedGrowthStart = address + 32 + (growthBlockIndex * 12);
+              const encryptedGrowth = this.readGBABytes(encryptedGrowthStart, 12);
+
+              if (encryptedGrowth && encryptedGrowth.length === 12) {
+                // Decrypt by XORing with encryption key (4 bytes at a time)
+                const decrypted = new Uint8Array(12);
+                for (let i = 0; i < 12; i += 4) {
+                  const encryptedDword = (encryptedGrowth[i]) |
+                                        (encryptedGrowth[i+1] << 8) |
+                                        (encryptedGrowth[i+2] << 16) |
+                                        (encryptedGrowth[i+3] << 24);
+                  const decryptedDword = (encryptedDword ^ encryptionKey) >>> 0;
+                  decrypted[i] = decryptedDword & 0xFF;
+                  decrypted[i+1] = (decryptedDword >> 8) & 0xFF;
+                  decrypted[i+2] = (decryptedDword >> 16) & 0xFF;
+                  decrypted[i+3] = (decryptedDword >> 24) & 0xFF;
+                }
+
+                // Species is first 2 bytes of Growth substructure (little-endian)
+                species = decrypted[0] | (decrypted[1] << 8);
+                const rawSpeciesName = EmulatorManager.SPECIES_NAMES[species] || `#${species}`;
+                // Convert to lowercase for consistency with LED server
+                speciesName = rawSpeciesName.toLowerCase();
+              }
+            }
+          }
+        } catch (decryptError) {
+          // If decryption fails, just skip species - don't break the whole read
+          console.warn('Failed to decrypt Pokemon species:', decryptError);
+        }
+      }
 
       // Read battle stats (unencrypted, at end of structure)
       const level = this.readGBAByte(address + 84);
@@ -1857,6 +2016,8 @@ class EmulatorManager {
       // Logging handled by delta tracking in pollStateChanges()
 
       return {
+        species: speciesName,
+        speciesId: species,
         nickname,
         level: level || 0,
         currentHP: currentHP || 0,
@@ -2230,18 +2391,24 @@ class EmulatorManager {
         if (enemyParty && enemyParty.length > 0) {
           // Check if enemy party composition or HP changed
           let hasChange = false;
+          let hasSignificantChange = false; // Track non-HP changes
           const changes = [];
 
           if (enemyParty.length !== this._lastKnownState.enemyParty.length) {
             hasChange = true;
+            hasSignificantChange = true;
           } else {
             enemyParty.forEach((pokemon, i) => {
               const lastPokemon = this._lastKnownState.enemyParty[i];
               if (!lastPokemon) {
                 hasChange = true;
-                changes.push(`  + ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level} appeared`);
+                hasSignificantChange = true;
+                const pokemonName = pokemon.species || pokemon.nickname || 'Unknown';
+                const pokemonType = this.getPokemonType(pokemonName);
+                changes.push(`  + ${pokemonName} (Type: ${pokemonType}) Lv.${pokemon.level} appeared`);
                 this._recordEvent('enemy_appeared', {
-                  pokemon: pokemon.species || pokemon.nickname || 'Unknown',
+                  pokemon: pokemonName,
+                  type: pokemonType,
                   level: pokemon.level,
                   hp: pokemon.currentHP,
                   maxHp: pokemon.maxHP
@@ -2250,9 +2417,17 @@ class EmulatorManager {
                 // Check for species change
                 if (pokemon.species !== lastPokemon.species || pokemon.nickname !== lastPokemon.nickname) {
                   hasChange = true;
-                  changes.push(`  ↻ Switched to ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level}`);
+                  hasSignificantChange = true;
+                  const pokemonName = pokemon.species || pokemon.nickname || 'Unknown';
+                  changes.push(`  ↻ Switched to ${pokemonName} Lv.${pokemon.level}`);
+
+                  // Get Pokemon type for LED server
+                  const pokemonType = this.getPokemonType(pokemonName);
+                  console.log(`🔄 Enemy switched to: ${pokemonName} (Type: ${pokemonType})`);
+
                   this._recordEvent('enemy_switched', {
-                    pokemon: pokemon.species || pokemon.nickname || 'Unknown',
+                    pokemon: pokemonName,
+                    type: pokemonType,
                     level: pokemon.level,
                     hp: pokemon.currentHP,
                     maxHp: pokemon.maxHP
@@ -2261,28 +2436,26 @@ class EmulatorManager {
                 // Check for HP change
                 else if (pokemon.currentHP !== lastPokemon.currentHP) {
                   hasChange = true;
-                  const hpDelta = pokemon.currentHP - lastPokemon.currentHP;
-                  const deltaStr = hpDelta > 0 ? `+${hpDelta}` : `${hpDelta}`;
-                  changes.push(`  ❤️ ${pokemon.species || pokemon.nickname}'s HP: ${lastPokemon.currentHP} → ${pokemon.currentHP} (${deltaStr})`);
-                  this._recordEvent('enemy_hp_change', {
-                    pokemon: pokemon.species || pokemon.nickname || 'Unknown',
-                    oldHp: lastPokemon.currentHP,
-                    newHp: pokemon.currentHP,
-                    delta: hpDelta
-                  });
+                  // HP changes are tracked but not sent to LED server (no _recordEvent)
+                  // This reduces LED server traffic for frequent HP updates
                 }
               }
             });
           }
 
           if (hasChange) {
-            console.log(`👾 Enemy party changed:`);
-            if (changes.length > 0) {
-              changes.forEach(change => console.log(change));
-            } else {
-              enemyParty.forEach((pokemon, i) => {
-                console.log(`  ${i + 1}. ${pokemon.species || pokemon.nickname || 'Unknown'} Lv.${pokemon.level || '?'} - HP: ${pokemon.currentHP || 0}/${pokemon.maxHP || 0}`);
-              });
+            // Only log "Enemy party changed" for significant changes (not just HP)
+            if (hasSignificantChange) {
+              console.log(`👾 Enemy party changed:`);
+              if (changes.length > 0) {
+                changes.forEach(change => console.log(change));
+              } else {
+                enemyParty.forEach((pokemon, i) => {
+                  const pokemonName = pokemon.species || pokemon.nickname || 'Unknown';
+                  const pokemonType = this.getPokemonType(pokemonName);
+                  console.log(`  ${i + 1}. ${pokemonName} (Type: ${pokemonType}) Lv.${pokemon.level || '?'} - HP: ${pokemon.currentHP || 0}/${pokemon.maxHP || 0}`);
+                });
+              }
             }
             this._lastKnownState.enemyParty = enemyParty.map(p => ({ ...p }));
           }
@@ -2551,6 +2724,48 @@ class EmulatorManager {
     };
 
     return bytes.map(byte => charMap[byte] || '').join('').trim();
+  }
+
+  // Get Pokemon type from name (for LED server integration)
+  getPokemonType(pokemonName) {
+    if (!pokemonName) return 'normal';
+
+    const name = pokemonName.toLowerCase().trim();
+
+    // Map of Pokemon to their primary type (matching LED server)
+    const typeMap = {
+      // Grass starters
+      'bulbasaur': 'grass', 'ivysaur': 'grass', 'venusaur': 'grass',
+      // Fire starters
+      'charmander': 'fire', 'charmeleon': 'fire', 'charizard': 'fire',
+      // Water starters
+      'squirtle': 'water', 'wartortle': 'water', 'blastoise': 'water',
+      // Electric
+      'pikachu': 'electric', 'raichu': 'electric',
+      'magnemite': 'electric', 'magneton': 'electric',
+      'voltorb': 'electric', 'electrode': 'electric',
+      // Water types
+      'psyduck': 'water', 'golduck': 'water',
+      'poliwag': 'water', 'poliwhirl': 'water', 'poliwrath': 'water',
+      'tentacool': 'water', 'tentacruel': 'water',
+      'slowpoke': 'water', 'slowbro': 'water',
+      'magikarp': 'water', 'gyarados': 'water',
+      // Fire types
+      'vulpix': 'fire', 'ninetales': 'fire',
+      'growlithe': 'fire', 'arcanine': 'fire',
+      // Bug types
+      'caterpie': 'bug', 'metapod': 'bug', 'butterfree': 'bug',
+      'weedle': 'bug', 'kakuna': 'bug', 'beedrill': 'bug',
+      // Poison types
+      'ekans': 'poison', 'arbok': 'poison',
+      'zubat': 'poison', 'golbat': 'poison',
+      // Normal types
+      'pidgey': 'normal', 'pidgeotto': 'normal', 'pidgeot': 'normal',
+      'rattata': 'normal', 'raticate': 'normal',
+      'spearow': 'normal', 'fearow': 'normal',
+    };
+
+    return typeMap[name] || 'normal';
   }
 
   destroy() {
