@@ -108,6 +108,78 @@ export const gameApi = {
   }
 };
 
+export const statisticsApi = {
+  async getOverview() {
+    try {
+      const response = await api.get('/api/statistics/overview');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch overview statistics:', error);
+      throw error;
+    }
+  },
+
+  async getMessages() {
+    try {
+      const response = await api.get('/api/statistics/messages');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch message statistics:', error);
+      throw error;
+    }
+  },
+
+  async getProgress() {
+    try {
+      const response = await api.get('/api/statistics/progress');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch progress statistics:', error);
+      throw error;
+    }
+  },
+
+  async getMilestones() {
+    try {
+      const response = await api.get('/api/statistics/milestones');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch milestones:', error);
+      throw error;
+    }
+  },
+
+  async getPlayers() {
+    try {
+      const response = await api.get('/api/statistics/players');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch player statistics:', error);
+      throw error;
+    }
+  },
+
+  async getActivity() {
+    try {
+      const response = await api.get('/api/statistics/activity');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch activity statistics:', error);
+      throw error;
+    }
+  },
+
+  async getLocations() {
+    try {
+      const response = await api.get('/api/statistics/locations');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch location statistics:', error);
+      throw error;
+    }
+  }
+};
+
 export const saveApi = {
   async listSaves() {
     try {

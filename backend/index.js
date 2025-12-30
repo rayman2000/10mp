@@ -1047,6 +1047,599 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// ============================================
+// Statistics Endpoints (Public /statistics page)
+// ============================================
+
+// Stopwords for word frequency analysis
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+  'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as',
+  'into', 'through', 'during', 'before', 'after', 'above', 'below',
+  'and', 'but', 'or', 'nor', 'so', 'yet', 'both', 'either', 'neither',
+  'not', 'only', 'own', 'same', 'than', 'too', 'very', 'just',
+  'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves',
+  'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him',
+  'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its',
+  'itself', 'they', 'them', 'their', 'theirs', 'themselves',
+  'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those',
+  'am', 'been', 'being', 'there', 'here', 'when', 'where', 'why', 'how',
+  'all', 'each', 'every', 'any', 'some', 'no', 'most', 'other', 'such',
+  'get', 'got', 'getting', 'good', 'like', 'now', 'one', 'two', 'also',
+  'back', 'more', 'out', 'up', 'down', 'then', 'well', 'way', 'even',
+  'new', 'want', 'because', 'any', 'these', 'give', 'day', 'most', 'us'
+]);
+
+// Badge names for Pokemon Fire Red
+const BADGE_NAMES = [
+  'Boulder Badge', 'Cascade Badge', 'Thunder Badge', 'Rainbow Badge',
+  'Soul Badge', 'Marsh Badge', 'Volcano Badge', 'Earth Badge'
+];
+
+// Helper function for word frequency analysis
+function calculateWordFrequency(messages) {
+  const wordCounts = {};
+
+  for (const message of messages) {
+    if (!message) continue;
+    // Lowercase, remove punctuation, split by whitespace
+    const words = message.toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter(word => word.length >= 3 && !STOPWORDS.has(word));
+
+    for (const word of words) {
+      wordCounts[word] = (wordCounts[word] || 0) + 1;
+    }
+  }
+
+  // Sort by count and return top 50
+  return Object.entries(wordCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 50)
+    .map(([word, count]) => ({ word, count }));
+}
+
+// Helper: Check if message is empty/default
+function isEmptyOrDefaultMessage(message) {
+  if (!message || message.trim() === '') return true;
+  const lower = message.toLowerCase().trim();
+  return lower.includes('played their turn');
+}
+
+// GET /api/statistics/overview - High-level aggregated statistics
+app.get('/api/statistics/overview', async (req, res) => {
+  try {
+    const { Op } = require('sequelize');
+
+    const totalTurns = await GameTurn.count({
+      where: { invalidatedAt: null }
+    });
+
+    const uniquePlayers = await GameTurn.count({
+      distinct: true,
+      col: 'playerName',
+      where: { invalidatedAt: null }
+    });
+
+    // Total playtime (sum of all turn playtimes)
+    const playtimeResult = await sequelize.query(`
+      SELECT COALESCE(SUM(playtime), 0) as total_playtime,
+             COALESCE(AVG(turn_duration), 600) as avg_turn_duration
+      FROM game_turns
+      WHERE invalidated_at IS NULL
+    `, { type: sequelize.QueryTypes.SELECT });
+
+    const totalPlaytimeMinutes = Math.floor((playtimeResult[0]?.total_playtime || 0) / 60);
+    const averageTurnDurationSeconds = Math.round(playtimeResult[0]?.avg_turn_duration || 600);
+
+    // Current badge count (from latest turn)
+    const latestTurn = await GameTurn.findOne({
+      where: { invalidatedAt: null },
+      order: [['turnEndedAt', 'DESC']]
+    });
+    const currentBadgeCount = latestTurn?.badgeCount || 0;
+
+    // Count messages with actual content (not empty or "played their turn")
+    const allMessages = await GameTurn.findAll({
+      attributes: ['message'],
+      where: { invalidatedAt: null }
+    });
+    const totalMessagesWithContent = allMessages.filter(t => !isEmptyOrDefaultMessage(t.message)).length;
+
+    res.json({
+      totalTurns,
+      uniquePlayers,
+      totalPlaytimeMinutes,
+      averageTurnDurationSeconds,
+      currentBadgeCount,
+      totalMessagesWithContent
+    });
+  } catch (error) {
+    console.error('Error fetching statistics overview:', error);
+    res.status(500).json({ error: 'Failed to fetch statistics overview' });
+  }
+});
+
+// GET /api/statistics/messages - Message analysis with word frequency
+app.get('/api/statistics/messages', async (req, res) => {
+  try {
+    const allTurns = await GameTurn.findAll({
+      attributes: ['id', 'playerName', 'message'],
+      where: { invalidatedAt: null }
+    });
+
+    const totalMessages = allTurns.length;
+    const turnsWithContent = allTurns.filter(t => !isEmptyOrDefaultMessage(t.message));
+    const messagesWithContent = turnsWithContent.length;
+    const emptyOrDefaultCount = totalMessages - messagesWithContent;
+
+    // Calculate average length of non-empty messages
+    const contentMessages = turnsWithContent.map(t => t.message).filter(Boolean);
+    const averageLength = contentMessages.length > 0
+      ? contentMessages.reduce((sum, m) => sum + m.length, 0) / contentMessages.length
+      : 0;
+
+    // Find longest and shortest messages
+    let longestMessage = { message: '', playerName: '', turnId: '' };
+    let shortestMessage = { message: '', playerName: '', turnId: '' };
+
+    if (turnsWithContent.length > 0) {
+      const sorted = [...turnsWithContent].sort((a, b) => (b.message?.length || 0) - (a.message?.length || 0));
+      const longest = sorted[0];
+      const shortest = sorted[sorted.length - 1];
+
+      longestMessage = { message: longest.message, playerName: longest.playerName, turnId: longest.id };
+      shortestMessage = { message: shortest.message, playerName: shortest.playerName, turnId: shortest.id };
+    }
+
+    // Word frequency analysis
+    const wordFrequency = calculateWordFrequency(contentMessages);
+
+    res.json({
+      totalMessages,
+      messagesWithContent,
+      emptyOrDefaultCount,
+      averageLength: Math.round(averageLength * 10) / 10,
+      longestMessage,
+      shortestMessage,
+      wordFrequency
+    });
+  } catch (error) {
+    console.error('Error fetching message statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch message statistics' });
+  }
+});
+
+// GET /api/statistics/progress - Game progress analysis
+app.get('/api/statistics/progress', async (req, res) => {
+  try {
+    const allTurns = await GameTurn.findAll({
+      attributes: ['id', 'playerName', 'partyData', 'money', 'badgeCount', 'turnEndedAt'],
+      where: { invalidatedAt: null },
+      order: [['turnEndedAt', 'ASC']]
+    });
+
+    // Party analysis
+    let totalPartySize = 0;
+    let totalLevelsSum = 0;
+    let totalHPPercentage = 0;
+    let turnsWithParty = 0;
+    let highestLevelPokemon = { species: 'None', level: 0, playerName: '' };
+    const speciesCounts = {};
+
+    // Level and money progression data
+    const levelProgression = [];
+    const moneyOverTime = [];
+    let peakMoney = 0;
+    let moneySum = 0;
+
+    allTurns.forEach((turn, index) => {
+      const turnNumber = index + 1;
+
+      // Money tracking
+      const money = turn.money || 0;
+      moneySum += money;
+      if (money > peakMoney) peakMoney = money;
+      moneyOverTime.push({
+        turnNumber,
+        money,
+        playerName: turn.playerName
+      });
+
+      // Party data analysis
+      if (turn.partyData && Array.isArray(turn.partyData) && turn.partyData.length > 0) {
+        turnsWithParty++;
+        const party = turn.partyData;
+        totalPartySize += party.length;
+
+        let turnTotalLevels = 0;
+        let turnTotalHP = 0;
+        let turnMaxHP = 0;
+
+        party.forEach(pokemon => {
+          if (!pokemon) return;
+
+          const level = pokemon.level || 0;
+          turnTotalLevels += level;
+
+          // Track highest level Pokemon
+          if (level > highestLevelPokemon.level) {
+            highestLevelPokemon = {
+              species: pokemon.species || pokemon.nickname || 'Unknown',
+              level,
+              playerName: turn.playerName
+            };
+          }
+
+          // Count species
+          const species = (pokemon.species || 'unknown').toLowerCase();
+          speciesCounts[species] = (speciesCounts[species] || 0) + 1;
+
+          // HP tracking
+          turnTotalHP += pokemon.currentHP || 0;
+          turnMaxHP += pokemon.maxHP || pokemon.currentHP || 1;
+        });
+
+        totalLevelsSum += turnTotalLevels;
+        if (turnMaxHP > 0) {
+          totalHPPercentage += (turnTotalHP / turnMaxHP) * 100;
+        }
+
+        levelProgression.push({
+          turnNumber,
+          totalLevels: turnTotalLevels,
+          partySize: party.length,
+          playerName: turn.playerName
+        });
+      }
+    });
+
+    // Calculate averages
+    const averagePartySize = turnsWithParty > 0 ? totalPartySize / turnsWithParty : 0;
+    const averageTotalLevels = turnsWithParty > 0 ? totalLevelsSum / turnsWithParty : 0;
+    const averagePartyHP = turnsWithParty > 0 ? totalHPPercentage / turnsWithParty : 0;
+    const averageMoney = allTurns.length > 0 ? moneySum / allTurns.length : 0;
+
+    // Most common species (top 10)
+    const mostCommonSpecies = Object.entries(speciesCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([species, count]) => ({ species, count }));
+
+    // Current money (from latest turn)
+    const currentMoney = allTurns.length > 0 ? allTurns[allTurns.length - 1].money || 0 : 0;
+
+    res.json({
+      partyAnalysis: {
+        averagePartySize: Math.round(averagePartySize * 10) / 10,
+        averageTotalLevels: Math.round(averageTotalLevels),
+        highestLevelPokemon,
+        mostCommonSpecies,
+        averagePartyHP: Math.round(averagePartyHP * 10) / 10
+      },
+      moneyProgression: {
+        currentMoney,
+        peakMoney,
+        averageMoney: Math.round(averageMoney),
+        moneyOverTime
+      },
+      levelProgression
+    });
+  } catch (error) {
+    console.error('Error fetching progress statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch progress statistics' });
+  }
+});
+
+// GET /api/statistics/milestones - Badge achievements and key milestones
+app.get('/api/statistics/milestones', async (req, res) => {
+  try {
+    // Find first player to achieve each badge count
+    const badgeMilestones = await sequelize.query(`
+      WITH badge_firsts AS (
+        SELECT
+          badge_count,
+          player_name,
+          turn_ended_at,
+          id,
+          ROW_NUMBER() OVER (PARTITION BY badge_count ORDER BY turn_ended_at ASC) as rn
+        FROM game_turns
+        WHERE invalidated_at IS NULL
+          AND badge_count > 0
+      )
+      SELECT badge_count, player_name, turn_ended_at, id
+      FROM badge_firsts
+      WHERE rn = 1
+      ORDER BY badge_count
+    `, { type: sequelize.QueryTypes.SELECT });
+
+    const formattedMilestones = badgeMilestones.map(m => ({
+      badgeNumber: m.badge_count,
+      badgeName: BADGE_NAMES[m.badge_count - 1] || `Badge ${m.badge_count}`,
+      playerName: m.player_name,
+      achievedAt: m.turn_ended_at,
+      turnId: m.id
+    }));
+
+    // Get current progress from latest turn
+    const latestTurn = await GameTurn.findOne({
+      where: { invalidatedAt: null },
+      order: [['turnEndedAt', 'DESC']]
+    });
+
+    // Get pokedex stats from latest snapshot if available
+    let pokedexSeen = 0;
+    let pokedexCaught = 0;
+
+    if (latestTurn) {
+      const latestSnapshot = await GameStateSnapshot.findOne({
+        where: { gameTurnId: latestTurn.id },
+        order: [['sequenceNumber', 'DESC']]
+      });
+
+      if (latestSnapshot) {
+        pokedexSeen = latestSnapshot.pokedexSeenCount || 0;
+        pokedexCaught = latestSnapshot.pokedexCaughtCount || 0;
+      }
+    }
+
+    // Total playtime
+    const playtimeResult = await sequelize.query(`
+      SELECT COALESCE(SUM(playtime), 0) as total_playtime
+      FROM game_turns
+      WHERE invalidated_at IS NULL
+    `, { type: sequelize.QueryTypes.SELECT });
+
+    res.json({
+      badgeMilestones: formattedMilestones,
+      currentProgress: {
+        badgeCount: latestTurn?.badgeCount || 0,
+        pokedexSeen,
+        pokedexCaught,
+        totalPlaytime: playtimeResult[0]?.total_playtime || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching milestones:', error);
+    res.status(500).json({ error: 'Failed to fetch milestones' });
+  }
+});
+
+// GET /api/statistics/locations - Location frequency data
+app.get('/api/statistics/locations', async (req, res) => {
+  try {
+    // Get location counts from game turns
+    const locationStats = await sequelize.query(`
+      SELECT
+        location,
+        COUNT(*) as visit_count,
+        MIN(turn_ended_at) as first_visit,
+        MAX(turn_ended_at) as last_visit,
+        (SELECT player_name FROM game_turns g2
+         WHERE g2.location = game_turns.location
+         AND g2.invalidated_at IS NULL
+         ORDER BY turn_ended_at ASC LIMIT 1) as first_visitor
+      FROM game_turns
+      WHERE invalidated_at IS NULL
+        AND location IS NOT NULL
+        AND location != ''
+      GROUP BY location
+      ORDER BY visit_count DESC
+    `, { type: sequelize.QueryTypes.SELECT });
+
+    // Get total turns for percentage calculation
+    const totalTurns = await GameTurn.count({
+      where: { invalidatedAt: null }
+    });
+
+    // Format the data
+    const locations = locationStats.map(loc => ({
+      location: loc.location,
+      visitCount: parseInt(loc.visit_count),
+      percentage: totalTurns > 0 ? Math.round((parseInt(loc.visit_count) / totalTurns) * 100) : 0,
+      firstVisitor: loc.first_visitor,
+      firstVisit: loc.first_visit,
+      lastVisit: loc.last_visit
+    }));
+
+    // Get unique location count
+    const uniqueLocations = locations.length;
+
+    // Most visited location
+    const mostVisited = locations.length > 0 ? locations[0] : null;
+
+    res.json({
+      locations,
+      uniqueLocations,
+      totalTurns,
+      mostVisited
+    });
+  } catch (error) {
+    console.error('Error fetching location statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch location statistics' });
+  }
+});
+
+// GET /api/statistics/activity - Activity heatmap data (when people play)
+app.get('/api/statistics/activity', async (req, res) => {
+  try {
+    // Get all turn timestamps
+    const turns = await GameTurn.findAll({
+      attributes: ['turnEndedAt'],
+      where: { invalidatedAt: null },
+      order: [['turnEndedAt', 'ASC']]
+    });
+
+    // Initialize heatmap grid: 7 days x 24 hours
+    const heatmap = {};
+    for (let day = 0; day < 7; day++) {
+      heatmap[day] = {};
+      for (let hour = 0; hour < 24; hour++) {
+        heatmap[day][hour] = 0;
+      }
+    }
+
+    // Count turns by day of week and hour
+    let totalTurns = 0;
+    let maxCount = 0;
+
+    turns.forEach(turn => {
+      if (!turn.turnEndedAt) return;
+      const date = new Date(turn.turnEndedAt);
+      const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+      const hour = date.getHours();
+      heatmap[day][hour]++;
+      totalTurns++;
+      if (heatmap[day][hour] > maxCount) {
+        maxCount = heatmap[day][hour];
+      }
+    });
+
+    // Convert to array format for frontend
+    const heatmapData = [];
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    for (let day = 0; day < 7; day++) {
+      for (let hour = 0; hour < 24; hour++) {
+        heatmapData.push({
+          day,
+          dayName: dayNames[day],
+          hour,
+          count: heatmap[day][hour]
+        });
+      }
+    }
+
+    // Also get activity by date for a timeline view
+    const activityByDate = {};
+    turns.forEach(turn => {
+      if (!turn.turnEndedAt) return;
+      const dateStr = new Date(turn.turnEndedAt).toISOString().split('T')[0];
+      activityByDate[dateStr] = (activityByDate[dateStr] || 0) + 1;
+    });
+
+    const dailyActivity = Object.entries(activityByDate)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Find peak times
+    let peakDay = 0;
+    let peakHour = 0;
+    let peakCount = 0;
+
+    for (let day = 0; day < 7; day++) {
+      for (let hour = 0; hour < 24; hour++) {
+        if (heatmap[day][hour] > peakCount) {
+          peakCount = heatmap[day][hour];
+          peakDay = day;
+          peakHour = hour;
+        }
+      }
+    }
+
+    res.json({
+      heatmap: heatmapData,
+      maxCount,
+      totalTurns,
+      dailyActivity,
+      peakTime: {
+        day: dayNames[peakDay],
+        hour: peakHour,
+        count: peakCount
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching activity statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch activity statistics' });
+  }
+});
+
+// GET /api/statistics/players - Per-player statistics
+app.get('/api/statistics/players', async (req, res) => {
+  try {
+    // Get all player statistics
+    const playerStats = await sequelize.query(`
+      SELECT
+        player_name,
+        COUNT(*) as turn_count,
+        SUM(playtime) as total_playtime,
+        MAX(badge_count) as max_badges,
+        COUNT(CASE WHEN message IS NOT NULL
+                   AND message != ''
+                   AND LOWER(message) NOT LIKE '%played their turn%'
+              THEN 1 END) as messages_left,
+        AVG(CASE WHEN message IS NOT NULL
+                 AND message != ''
+                 AND LOWER(message) NOT LIKE '%played their turn%'
+            THEN LENGTH(message) END) as avg_message_length
+      FROM game_turns
+      WHERE invalidated_at IS NULL
+      GROUP BY player_name
+      ORDER BY turn_count DESC
+    `, { type: sequelize.QueryTypes.SELECT });
+
+    // Get which badges each player earned (first to earn)
+    const badgeEarners = await sequelize.query(`
+      WITH badge_firsts AS (
+        SELECT
+          badge_count,
+          player_name,
+          ROW_NUMBER() OVER (PARTITION BY badge_count ORDER BY turn_ended_at ASC) as rn
+        FROM game_turns
+        WHERE invalidated_at IS NULL
+          AND badge_count > 0
+      )
+      SELECT player_name, ARRAY_AGG(badge_count ORDER BY badge_count) as badges_earned
+      FROM badge_firsts
+      WHERE rn = 1
+      GROUP BY player_name
+    `, { type: sequelize.QueryTypes.SELECT });
+
+    const badgeMap = {};
+    badgeEarners.forEach(b => {
+      badgeMap[b.player_name] = b.badges_earned || [];
+    });
+
+    const players = playerStats.map(p => ({
+      playerName: p.player_name,
+      turnCount: parseInt(p.turn_count),
+      totalPlaytime: parseInt(p.total_playtime) || 0,
+      maxBadges: p.max_badges || 0,
+      badgesEarned: badgeMap[p.player_name] || [],
+      messagesLeft: parseInt(p.messages_left) || 0,
+      averageMessageLength: Math.round(p.avg_message_length || 0)
+    }));
+
+    // Top contributors
+    const topByTurns = players.slice(0, 10).map(p => ({
+      playerName: p.playerName,
+      count: p.turnCount
+    }));
+
+    const topByBadges = Object.entries(badgeMap)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 10)
+      .map(([playerName, badges]) => ({
+        playerName,
+        badges
+      }));
+
+    res.json({
+      players,
+      topContributors: {
+        byTurns: topByTurns,
+        byBadges: topByBadges
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching player statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch player statistics' });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
