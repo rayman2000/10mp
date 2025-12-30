@@ -11,7 +11,113 @@ class EmulatorManager {
     this.lastSaveState = null;
     this.lastScreenshot = null;
     this.lastSaveData = null;
+
+    // State tracking for delta logging
+    this._lastKnownState = {
+      location: null,
+      inBattle: false,
+      enemyParty: []
+    };
+
+    // Track playtime to detect backwards time
+    this._lastPlaytimeSeconds = 0;
+
+    // Track party Pokemon levels by PID to detect level ups
+    // Map of pid -> {nickname, level}
+    this._lastKnownParty = new Map();
+
+    // Event collection for game state server integration
+    this._pendingEvents = [];
+    this._gameStateConfig = {
+      enabled: false,  // Will be set by auto-detection
+      port: 3333,      // Default port for gamestate server
+      interval: 200    // Default update interval (200ms = 5Hz)
+    };
+    this._gameStateInterval = null;
+    this._gameStateServerOffline = false; // Track if server is down to reduce error spam
+    this._gameStateServerAvailable = false; // Track if server was detected at startup
+
+    // Track if game has loaded to suppress pointer warnings on startup
+    this._gameLoadedOnce = false;
+
+    // Track if scan debug has been logged to prevent spam
+    this._scanDebugLogged = false;
+
     console.log('EmulatorManager initialized');
+  }
+
+  // Record game state event for external server (if enabled)
+  _recordEvent(type, data = {}) {
+    // ALWAYS record events locally regardless of LED server status
+    // The LED server check happens in sendGameStateUpdate()
+
+    // SAFETY: Prevent memory leak from unbounded array growth
+    if (this._pendingEvents.length >= 100) {
+      this._pendingEvents.shift(); // Remove oldest event
+    }
+
+    this._pendingEvents.push({
+      type,
+      timestamp: new Date().toISOString(),
+      data
+    });
+
+    // Log events for debugging (only in development or when server is offline)
+    if (!this._gameStateConfig.enabled && import.meta.env.DEV) {
+      console.log(`📝 Event recorded (not sent to LED server): ${type}`, data);
+    }
+  }
+
+  /**
+   * Auto-detect gamestate server availability
+   * Attempts to connect to localhost:3333/health
+   * Enables the feature if server responds
+   * @returns {Promise<boolean>} true if server detected, false otherwise
+   */
+  async detectGameStateServer() {
+    const url = `http://localhost:${this._gameStateConfig.port}/health`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(2000)  // 2 second timeout
+      });
+
+      if (response.ok) {
+        this._gameStateConfig.enabled = true;
+        this._gameStateServerAvailable = true;
+        console.log(`🌐 Game State Server: DETECTED at localhost:${this._gameStateConfig.port}`);
+        console.log(`   → Events will be sent every ${this._gameStateConfig.interval}ms`);
+        return true;
+      }
+    } catch (error) {
+      // Server not running - this is expected and OK
+      this._gameStateConfig.enabled = false;
+      this._gameStateServerAvailable = false;
+      console.log(`🌐 Game State Server: Not detected (localhost:${this._gameStateConfig.port})`);
+      console.log(`   → Events will be recorded locally but not sent to LED server`);
+      return false;
+    }
+  }
+
+  /**
+   * Configure the game state polling interval
+   * @param {number} intervalMs - Polling interval in milliseconds (recommended: 100-1000ms)
+   */
+  setGameStateInterval(intervalMs) {
+    const oldInterval = this._gameStateConfig.interval;
+    this._gameStateConfig.interval = intervalMs;
+
+    console.log(`🔄 Game state polling interval changed: ${oldInterval}ms → ${intervalMs}ms`);
+
+    // If polling is already running, restart it with new interval
+    if (this._gameStateInterval) {
+      clearInterval(this._gameStateInterval);
+      this._gameStateInterval = setInterval(() => {
+        this.sendGameStateUpdate();
+      }, this._gameStateConfig.interval);
+      console.log(`   → Polling restarted with new interval`);
+    }
   }
 
   async initialize() {
@@ -79,6 +185,9 @@ class EmulatorManager {
         if (window.EJS_emulator && window.EJS_emulator.Module) {
           console.log('EJS_emulator.Module available:', !!window.EJS_emulator.Module);
         }
+
+        // Start state polling for delta logging
+        this.startStatePolling();
       };
 
       // Capture save state data when user saves
@@ -129,7 +238,10 @@ class EmulatorManager {
         
         // Wait for initialization to complete
         await this.waitForInitialization();
-        
+
+        // Auto-detect gamestate server availability
+        await this.detectGameStateServer();
+
         console.log('✅ EmulatorJS initialization complete');
         return true;
       } catch (scriptError) {
@@ -736,16 +848,15 @@ class EmulatorManager {
       }
 
       // First time: scan for memory layout (expensive, but only done once)
-      console.log('First-time save state scan, size:', state.length, 'bytes');
-      const magic = String.fromCharCode(state[0], state[1], state[2], state[3]);
-      console.log('Magic bytes:', magic);
-
       const found = this.scanForSaveblockPointers(state);
 
       if (!found) {
-        console.log('Could not find GBA memory in save state');
+        // Silently return null if memory not found (expected before game starts)
         return null;
       }
+
+      // Only log success to avoid spam before game loads
+      console.log('First-time save state scan successful, size:', state.length, 'bytes');
 
       // Cache offsets permanently - they never change for this emulator session
       this._cachedMemoryOffsets = {
@@ -788,11 +899,15 @@ class EmulatorManager {
     const SB_PTR_OFFSET_IN_IWRAM = 0x5008;
 
     // First, try to find the mGBA state by looking for the version magic
-    console.log('Searching for mGBA version magic (0x01000007)...');
+    if (!this._scanDebugLogged) {
+      console.log('Searching for mGBA version magic (0x01000007)...');
+    }
     for (let i = 0; i < state.length - 0x61000; i += 4) {
       const magic = this.readU32FromArray(state, i);
       if (magic === MGBA_VERSION_MAGIC) {
-        console.log(`Found mGBA magic at offset 0x${i.toString(16)}`);
+        if (!this._scanDebugLogged) {
+          console.log(`Found mGBA magic at offset 0x${i.toString(16)}`);
+        }
 
         // Verify by checking the saveblock pointers
         const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
@@ -802,20 +917,29 @@ class EmulatorManager {
           const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM);
           const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 4);
 
-          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          if (!this._scanDebugLogged) {
+            console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          }
 
           if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
-            console.log(`  Valid saveblock pointers found!`);
+            if (!this._scanDebugLogged) {
+              console.log(`  Valid saveblock pointers found!`);
+            }
+            this._scanDebugLogged = true; // Stop logging after first success
             return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
           } else {
-            console.log(`  Saveblock pointers not valid, continuing search...`);
+            if (!this._scanDebugLogged) {
+              console.log(`  Saveblock pointers not valid, continuing search...`);
+            }
           }
         }
       }
     }
 
     // Try known header offsets (libretro wrappers often add fixed-size headers)
-    console.log('Magic search failed, trying known header offsets...');
+    if (!this._scanDebugLogged) {
+      console.log('Magic search failed, trying known header offsets...');
+    }
     const knownOffsets = [0, 0x38, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000, 0x4000, 0x8000, 0x10000, 0x20000];
 
     for (const headerOffset of knownOffsets) {
@@ -828,14 +952,19 @@ class EmulatorManager {
       const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + SB_PTR_OFFSET_IN_IWRAM + 4);
 
       if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
-        console.log(`Found at known offset 0x${headerOffset.toString(16)}:`);
-        console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+        if (!this._scanDebugLogged) {
+          console.log(`Found at known offset 0x${headerOffset.toString(16)}:`);
+          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+        }
+        this._scanDebugLogged = true;
         return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset };
       }
     }
 
     // If known offsets fail, scan the entire state for the pointer pattern
-    console.log('Known offsets failed, scanning entire state for pointer pattern...');
+    if (!this._scanDebugLogged) {
+      console.log('Known offsets failed, scanning entire state for pointer pattern...');
+    }
 
     for (let i = 0; i < state.length - 0x48000; i += 4) {
       const val1 = this.readU32FromArray(state, i);
@@ -862,11 +991,14 @@ class EmulatorManager {
             const nameByte = state[nameAddr];
             // Valid Pokemon text starts with 0xBB-0xEE range (letters)
             if (nameByte >= 0xBB && nameByte <= 0xEE) {
-              console.log(`Pattern match at offset 0x${i.toString(16)}:`);
-              console.log(`  SB1=0x${val1.toString(16)}, SB2=0x${val2.toString(16)}`);
-              console.log(`  Calculated IWRAM base: 0x${iwramBase.toString(16)}`);
-              console.log(`  Calculated EWRAM base: 0x${ewramBase.toString(16)}`);
-              console.log(`  Name first byte: 0x${nameByte.toString(16)}`);
+              if (!this._scanDebugLogged) {
+                console.log(`Pattern match at offset 0x${i.toString(16)}:`);
+                console.log(`  SB1=0x${val1.toString(16)}, SB2=0x${val2.toString(16)}`);
+                console.log(`  Calculated IWRAM base: 0x${iwramBase.toString(16)}`);
+                console.log(`  Calculated EWRAM base: 0x${ewramBase.toString(16)}`);
+                console.log(`  Name first byte: 0x${nameByte.toString(16)}`);
+              }
+              this._scanDebugLogged = true;
               return { iwramBase, ewramBase, headerOffset: i - MGBA_IWRAM_OFFSET - SB_PTR_OFFSET_IN_IWRAM };
             }
           }
@@ -875,7 +1007,9 @@ class EmulatorManager {
     }
 
     // Last resort: try to find EWRAM by looking for Pokemon party signature
-    console.log('Pointer scan failed, trying alternate pattern detection...');
+    if (!this._scanDebugLogged) {
+      console.log('Pointer scan failed, trying alternate pattern detection...');
+    }
     return this.scanForAlternatePatterns(state);
   }
 
@@ -900,7 +1034,9 @@ class EmulatorManager {
     const MGBA_IWRAM_OFFSET = 0x19000;
     const MGBA_EWRAM_OFFSET = 0x21000;
 
-    console.log('Searching for Pokemon Fire Red game code signature...');
+    if (!this._scanDebugLogged) {
+      console.log('Searching for Pokemon Fire Red game code signature...');
+    }
 
     // Search for "BPRE" or "BPRJ" game codes
     const gameCodes = ['BPRE', 'BPRJ', 'BPRF', 'BPRD', 'BPRS', 'BPRI'];
@@ -913,8 +1049,10 @@ class EmulatorManager {
 
         const found = code.split('').every((ch, j) => state[codeOffset + j] === ch.charCodeAt(0));
         if (found) {
-          console.log(`Found game code "${code}" at offset 0x${codeOffset.toString(16)}`);
-          console.log(`  State would start at offset 0x${i.toString(16)}`);
+          if (!this._scanDebugLogged) {
+            console.log(`Found game code "${code}" at offset 0x${codeOffset.toString(16)}`);
+            console.log(`  State would start at offset 0x${i.toString(16)}`);
+          }
 
           const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
           const testEWRAMBase = i + MGBA_EWRAM_OFFSET;
@@ -924,10 +1062,15 @@ class EmulatorManager {
             const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + 0x5008);
             const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + 0x500C);
 
-            console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+            if (!this._scanDebugLogged) {
+              console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+            }
 
             if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
-              console.log(`  Valid saveblock pointers confirmed!`);
+              if (!this._scanDebugLogged) {
+                console.log(`  Valid saveblock pointers confirmed!`);
+              }
+              this._scanDebugLogged = true;
               return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
             }
           }
@@ -936,7 +1079,9 @@ class EmulatorManager {
     }
 
     // Try looking for "POKEMON FIRE" game title at offset 0x10
-    console.log('Searching for "POKEMON FIRE" title...');
+    if (!this._scanDebugLogged) {
+      console.log('Searching for "POKEMON FIRE" title...');
+    }
     const title = 'POKEMON FIRE';
     for (let i = 0; i < state.length - 0x61000; i++) {
       const titleOffset = i + 0x10;
@@ -944,7 +1089,9 @@ class EmulatorManager {
 
       const found = title.split('').every((ch, j) => state[titleOffset + j] === ch.charCodeAt(0));
       if (found) {
-        console.log(`Found title at offset 0x${titleOffset.toString(16)}`);
+        if (!this._scanDebugLogged) {
+          console.log(`Found title at offset 0x${titleOffset.toString(16)}`);
+        }
 
         const testIWRAMBase = i + MGBA_IWRAM_OFFSET;
         const testEWRAMBase = i + MGBA_EWRAM_OFFSET;
@@ -953,16 +1100,24 @@ class EmulatorManager {
           const sb1Ptr = this.readU32FromArray(state, testIWRAMBase + 0x5008);
           const sb2Ptr = this.readU32FromArray(state, testIWRAMBase + 0x500C);
 
-          console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          if (!this._scanDebugLogged) {
+            console.log(`  SB1=0x${sb1Ptr.toString(16)}, SB2=0x${sb2Ptr.toString(16)}`);
+          }
 
           if (this.isValidSaveblockPair(sb1Ptr, sb2Ptr)) {
+            this._scanDebugLogged = true;
             return { iwramBase: testIWRAMBase, ewramBase: testEWRAMBase, headerOffset: i };
           }
         }
       }
     }
 
-    console.log('No alternate patterns found');
+    if (!this._scanDebugLogged) {
+      console.log('No alternate patterns found');
+      // Set flag to true after first scan attempt (success or failure)
+      // This prevents log spam on subsequent retries before game starts
+      this._scanDebugLogged = true;
+    }
     return null;
   }
 
@@ -1147,6 +1302,12 @@ class EmulatorManager {
     SB1_COINS: 0x0294,                // 2 bytes - Game corner coins
     SB1_FLAGS: 0x0EE0,                // Flags array (0x120 bytes)
 
+    // Bag items (in SaveBlock1)
+    SB1_BAG_ITEMS: 0x03B8,            // Items pocket (30 slots x 4 bytes)
+    SB1_BAG_KEY_ITEMS: 0x0430,        // Key items pocket (30 slots x 4 bytes)
+    SB1_BAG_POKEBALLS: 0x0464,        // Pokeballs pocket (16 slots x 4 bytes)
+    SB1_BAG_BERRIES: 0x054C,          // Berries pocket (43 slots x 4 bytes)
+
     // Security key is in SaveBlock2, NOT SaveBlock1
     // Source: https://github.com/pret/pokefirered/blob/master/include/global.h
     SB2_SECURITY_KEY: 0x0F20,         // 4 bytes - XOR key for money/coins (in SaveBlock2!)
@@ -1160,9 +1321,25 @@ class EmulatorManager {
     SB2_PLAYTIME_SECONDS: 0x0011,     // 1 byte
     SB2_OPTIONS: 0x0013,              // Game options
 
+    // Pokedex progress (in SaveBlock2)
+    // Pokedex struct starts at 0x18, then:
+    // - owned array is at struct+0x04
+    // - seen array is at struct+0x38
+    SB2_POKEDEX_OWNED: 0x001C,        // 52 bytes - Caught/Owned flags (0x18 + 0x04)
+    SB2_POKEDEX_SEEN: 0x0050,         // 52 bytes - Seen flags (0x18 + 0x38)
+
     // Party data - in EWRAM, separate from saveblocks
     PARTY_COUNT: 0x02024284,          // 1 byte - Number of Pokemon in party (at start of party structure)
     PARTY_DATA: 0x02024284,           // Party Pokemon array (6 x 100 bytes) - count is embedded
+
+    // Battle state detection
+    GMAIN_BASE: 0x030030F0,           // gMain structure base in IWRAM
+    GMAIN_INBATTLE: 0x03003529,       // gMain.inBattle flag (gMain + 0x439, bit 1)
+    BATTLE_FLAGS: 0x02022B4C,         // 4 bytes - Battle type/state flags (in EWRAM)
+    ENEMY_PARTY_DATA: 0x0202402C,     // Enemy Pokemon array (6 x 100 bytes)
+
+    // Constants
+    ITEM_SLOT_SIZE: 4,                // 2 bytes itemId + 2 bytes quantity
   };
 
   // Pokemon Fire Red location names by map group and number
@@ -1395,6 +1572,101 @@ class EmulatorManager {
     '15:1': "Mr. Pokemon's House",
   };
 
+  // Pokemon species ID to name mapping (Gen III National Dex)
+  // Source: https://bulbapedia.bulbagarden.net/wiki/List_of_Pok%C3%A9mon_by_index_number_(Generation_III)
+  static SPECIES_NAMES = {
+    0: 'None',
+    1: 'Bulbasaur', 2: 'Ivysaur', 3: 'Venusaur',
+    4: 'Charmander', 5: 'Charmeleon', 6: 'Charizard',
+    7: 'Squirtle', 8: 'Wartortle', 9: 'Blastoise',
+    10: 'Caterpie', 11: 'Metapod', 12: 'Butterfree',
+    13: 'Weedle', 14: 'Kakuna', 15: 'Beedrill',
+    16: 'Pidgey', 17: 'Pidgeotto', 18: 'Pidgeot',
+    19: 'Rattata', 20: 'Raticate',
+    21: 'Spearow', 22: 'Fearow',
+    23: 'Ekans', 24: 'Arbok',
+    25: 'Pikachu', 26: 'Raichu',
+    27: 'Sandshrew', 28: 'Sandslash',
+    29: 'Nidoran♀', 30: 'Nidorina', 31: 'Nidoqueen',
+    32: 'Nidoran♂', 33: 'Nidorino', 34: 'Nidoking',
+    35: 'Clefairy', 36: 'Clefable',
+    37: 'Vulpix', 38: 'Ninetales',
+    39: 'Jigglypuff', 40: 'Wigglytuff',
+    41: 'Zubat', 42: 'Golbat',
+    43: 'Oddish', 44: 'Gloom', 45: 'Vileplume',
+    46: 'Paras', 47: 'Parasect',
+    48: 'Venonat', 49: 'Venomoth',
+    50: 'Diglett', 51: 'Dugtrio',
+    52: 'Meowth', 53: 'Persian',
+    54: 'Psyduck', 55: 'Golduck',
+    56: 'Mankey', 57: 'Primeape',
+    58: 'Growlithe', 59: 'Arcanine',
+    60: 'Poliwag', 61: 'Poliwhirl', 62: 'Poliwrath',
+    63: 'Abra', 64: 'Kadabra', 65: 'Alakazam',
+    66: 'Machop', 67: 'Machoke', 68: 'Machamp',
+    69: 'Bellsprout', 70: 'Weepinbell', 71: 'Victreebel',
+    72: 'Tentacool', 73: 'Tentacruel',
+    74: 'Geodude', 75: 'Graveler', 76: 'Golem',
+    77: 'Ponyta', 78: 'Rapidash',
+    79: 'Slowpoke', 80: 'Slowbro',
+    81: 'Magnemite', 82: 'Magneton',
+    83: "Farfetch'd",
+    84: 'Doduo', 85: 'Dodrio',
+    86: 'Seel', 87: 'Dewgong',
+    88: 'Grimer', 89: 'Muk',
+    90: 'Shellder', 91: 'Cloyster',
+    92: 'Gastly', 93: 'Haunter', 94: 'Gengar',
+    95: 'Onix',
+    96: 'Drowzee', 97: 'Hypno',
+    98: 'Krabby', 99: 'Kingler',
+    100: 'Voltorb', 101: 'Electrode',
+    102: 'Exeggcute', 103: 'Exeggutor',
+    104: 'Cubone', 105: 'Marowak',
+    106: 'Hitmonlee', 107: 'Hitmonchan',
+    108: 'Lickitung',
+    109: 'Koffing', 110: 'Weezing',
+    111: 'Rhyhorn', 112: 'Rhydon',
+    113: 'Chansey',
+    114: 'Tangela',
+    115: 'Kangaskhan',
+    116: 'Horsea', 117: 'Seadra',
+    118: 'Goldeen', 119: 'Seaking',
+    120: 'Staryu', 121: 'Starmie',
+    122: 'Mr. Mime',
+    123: 'Scyther',
+    124: 'Jynx',
+    125: 'Electabuzz',
+    126: 'Magmar',
+    127: 'Pinsir',
+    128: 'Tauros',
+    129: 'Magikarp', 130: 'Gyarados',
+    131: 'Lapras',
+    132: 'Ditto',
+    133: 'Eevee', 134: 'Vaporeon', 135: 'Jolteon', 136: 'Flareon',
+    137: 'Porygon',
+    138: 'Omanyte', 139: 'Omastar',
+    140: 'Kabuto', 141: 'Kabutops',
+    142: 'Aerodactyl',
+    143: 'Snorlax',
+    144: 'Articuno', 145: 'Zapdos', 146: 'Moltres',
+    147: 'Dratini', 148: 'Dragonair', 149: 'Dragonite',
+    150: 'Mewtwo',
+    151: 'Mew',
+    // Gen 2 (Johto)
+    152: 'Chikorita', 153: 'Bayleef', 154: 'Meganium',
+    155: 'Cyndaquil', 156: 'Quilava', 157: 'Typhlosion',
+    158: 'Totodile', 159: 'Croconaw', 160: 'Feraligatr',
+    169: 'Crobat',
+    186: 'Politoed',
+    196: 'Espeon', 197: 'Umbreon',
+    208: 'Steelix',
+    230: 'Kingdra',
+    // Gen 3 (Hoenn) - Common ones
+    252: 'Treecko', 253: 'Grovyle', 254: 'Sceptile',
+    255: 'Torchic', 256: 'Combusken', 257: 'Blaziken',
+    258: 'Mudkip', 259: 'Marshtomp', 260: 'Swampert',
+  };
+
   // Helper methods to read specific memory addresses
   readPlayerName() {
     try {
@@ -1440,17 +1712,17 @@ class EmulatorManager {
       // Read location from saveblock1 - this is the authoritative source
       const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock1 pointer for location');
+        // Only log if game has loaded before (suppress startup spam)
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer for location');
+        }
         return null;
       }
 
       const mapGroup = this.readGBAByte(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MAP_GROUP);
       const mapNum = this.readGBAByte(sb1Ptr + EmulatorManager.ADDRESSES.SB1_MAP_NUM);
 
-      console.log(`Map read from SB1: group=${mapGroup}, number=${mapNum}`);
-
       if (mapGroup === null || mapNum === null) {
-        console.log('Could not read map group/number');
         return null;
       }
 
@@ -1459,12 +1731,10 @@ class EmulatorManager {
       const locationName = EmulatorManager.LOCATION_NAMES[key];
 
       if (locationName) {
-        console.log(`Location found: ${locationName}`);
         return locationName;
       }
 
       // Return raw coordinates if not in our lookup table
-      console.log(`Location not in lookup table: ${key}`);
       return `Map ${mapGroup}-${mapNum}`;
     } catch (error) {
       console.error('Error reading location:', error);
@@ -1482,7 +1752,10 @@ class EmulatorManager {
       // First get saveblock1 pointer
       const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock1 pointer:', sb1Ptr?.toString(16));
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer:', sb1Ptr?.toString(16));
+        }
         return null;
       }
 
@@ -1518,7 +1791,10 @@ class EmulatorManager {
       // Playtime is in saveblock2
       const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
       if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock2 pointer');
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock2 pointer');
+        }
         return null;
       }
 
@@ -1530,6 +1806,17 @@ class EmulatorManager {
         console.log('Could not read playtime');
         return null;
       }
+
+      const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+      // Detect backwards time
+      if (this._lastPlaytimeSeconds > 0 && totalSeconds < this._lastPlaytimeSeconds) {
+        const delta = this._lastPlaytimeSeconds - totalSeconds;
+        console.warn(`⚠️ Playtime went BACKWARDS by ${delta} seconds! Was ${this._lastPlaytimeSeconds}s, now ${totalSeconds}s (${hours}:${minutes}:${seconds})`);
+        console.warn(`   This can happen during: save state loads, battles, or memory read errors`);
+      }
+
+      this._lastPlaytimeSeconds = totalSeconds;
 
       console.log(`Playtime: ${hours}:${minutes}:${seconds}`);
       return { hours, minutes, seconds };
@@ -1547,11 +1834,17 @@ class EmulatorManager {
       const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
 
       if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock1 pointer for money');
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer for money');
+        }
         return null;
       }
       if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
-        console.log('Invalid saveblock2 pointer for security key');
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock2 pointer for security key');
+        }
         return null;
       }
 
@@ -1613,7 +1906,7 @@ class EmulatorManager {
         }
       }
 
-      console.log(`Party count (detected): ${party.length}`);
+      // Party count logging removed - tracked by delta logging
       return party;
     } catch (error) {
       console.error('Error reading party data:', error);
@@ -1647,11 +1940,75 @@ class EmulatorManager {
         return null;
       }
 
+      // Read OT ID for decryption
+      const otId = this.readGBADword(address + 4);
+
       // Read nickname (bytes 8-17)
       const nicknameBytes = this.readGBABytes(address + 8, 10);
       const nickname = nicknameBytes ? this.convertPokemonText(
         nicknameBytes.filter(b => b !== 0xFF && b !== 0x00)
       ) : 'Unknown';
+
+      // Decrypt species from Growth substructure (bytes 32-43)
+      // The 48 encrypted bytes are split into 4 substructures of 12 bytes each
+      // Substructure order determined by (pid % 24)
+      // Growth substructure contains species at offset 0-1
+      let species = null;
+      let speciesName = null;
+
+      if (otId !== null && otId !== 0) {
+        try {
+          const encryptionKey = pid ^ otId;
+
+          // Determine substructure order (0-23 maps to which substructure is first)
+          // Growth=G, Attacks=A, EVs=E, Misc=M
+          const substructureOrders = [
+            [0,1,2,3], [0,1,3,2], [0,2,1,3], [0,2,3,1], [0,3,1,2], [0,3,2,1], // G first
+            [1,0,2,3], [1,0,3,2], [1,2,0,3], [1,2,3,0], [1,3,0,2], [1,3,2,0], // A first
+            [2,0,1,3], [2,0,3,1], [2,1,0,3], [2,1,3,0], [2,3,0,1], [2,3,1,0], // E first
+            [3,0,1,2], [3,0,2,1], [3,1,0,2], [3,1,2,0], [3,2,0,1], [3,2,1,0]  // M first
+          ];
+
+          const orderIndex = pid % 24;
+          const order = substructureOrders[orderIndex];
+
+          if (order && Array.isArray(order)) {
+            // Find which encrypted block contains Growth (index 0 in original order)
+            const growthBlockIndex = order.indexOf(0);
+
+            if (growthBlockIndex !== -1) {
+              // Read the encrypted Growth block (12 bytes)
+              const encryptedGrowthStart = address + 32 + (growthBlockIndex * 12);
+              const encryptedGrowth = this.readGBABytes(encryptedGrowthStart, 12);
+
+              if (encryptedGrowth && encryptedGrowth.length === 12) {
+                // Decrypt by XORing with encryption key (4 bytes at a time)
+                const decrypted = new Uint8Array(12);
+                for (let i = 0; i < 12; i += 4) {
+                  const encryptedDword = (encryptedGrowth[i]) |
+                                        (encryptedGrowth[i+1] << 8) |
+                                        (encryptedGrowth[i+2] << 16) |
+                                        (encryptedGrowth[i+3] << 24);
+                  const decryptedDword = (encryptedDword ^ encryptionKey) >>> 0;
+                  decrypted[i] = decryptedDword & 0xFF;
+                  decrypted[i+1] = (decryptedDword >> 8) & 0xFF;
+                  decrypted[i+2] = (decryptedDword >> 16) & 0xFF;
+                  decrypted[i+3] = (decryptedDword >> 24) & 0xFF;
+                }
+
+                // Species is first 2 bytes of Growth substructure (little-endian)
+                species = decrypted[0] | (decrypted[1] << 8);
+                const rawSpeciesName = EmulatorManager.SPECIES_NAMES[species] || `#${species}`;
+                // Convert to lowercase for consistency with LED server
+                speciesName = rawSpeciesName.toLowerCase();
+              }
+            }
+          }
+        } catch (decryptError) {
+          // If decryption fails, just skip species - don't break the whole read
+          console.warn('Failed to decrypt Pokemon species:', decryptError);
+        }
+      }
 
       // Read battle stats (unencrypted, at end of structure)
       const level = this.readGBAByte(address + 84);
@@ -1661,9 +2018,11 @@ class EmulatorManager {
       const defense = this.readGBAWord(address + 92);
       const speed = this.readGBAWord(address + 94);
 
-      console.log(`Pokemon at 0x${address.toString(16)}: ${nickname}, Lv${level}, HP ${currentHP}/${maxHP}`);
+      // Logging handled by delta tracking in pollStateChanges()
 
       return {
+        species: speciesName,
+        speciesId: species,
         nickname,
         level: level || 0,
         currentHP: currentHP || 0,
@@ -1675,6 +2034,702 @@ class EmulatorManager {
       };
     } catch (error) {
       console.error('Error reading Pokemon data:', error);
+      return null;
+    }
+  }
+
+  // Decode battle type flags into human-readable info
+  decodeBattleType(battleFlags) {
+    const types = [];
+
+    // Battle type flag definitions from pokefirered
+    if (battleFlags & 0x01) types.push('Double Battle');
+    if (battleFlags & 0x02) types.push('Link Battle');
+    if (battleFlags & 0x04) types.push('Multi Battle (unused in FR)');
+    if (battleFlags & 0x08) types.push('Battle Frontier');
+    if (battleFlags & 0x10) types.push('Ereader Trainer');
+    if (battleFlags & 0x20) types.push('Trainer Battle');
+    if (battleFlags & 0x40) types.push('Two Opponents');
+    if (battleFlags & 0x80) types.push('First Battle');
+    if (battleFlags & 0x100) types.push('Safari Zone');
+    if (battleFlags & 0x200) types.push('Catch Tutorial');
+    if (battleFlags & 0x400) types.push('Legendary');
+    if (battleFlags & 0x800) types.push('Regi Battle');
+    if (battleFlags & 0x1000) types.push('Ghost Battle');
+    if (battleFlags & 0x2000) types.push('Groudon/Kyogre Battle');
+    if (battleFlags & 0x4000) types.push('Rayquaza Battle');
+
+    return types.length > 0 ? types.join(', ') : 'No active battle';
+  }
+
+  // Read battle state
+  readBattleState() {
+    try {
+      // Method 1: Check gMain.inBattle flag (most reliable)
+      const inBattleByte = this.readGBAByte(EmulatorManager.ADDRESSES.GMAIN_INBATTLE);
+      const isInBattle = inBattleByte !== null && (inBattleByte & 0x02) !== 0;
+
+      // Method 2: Read battle type flags for additional information
+      const battleFlags = this.readGBADword(EmulatorManager.ADDRESSES.BATTLE_FLAGS);
+
+      // Note: GMAIN_INBATTLE (Method 1) is the most reliable indicator
+      // BATTLE_FLAGS may disagree during transitions, which is expected
+      // Removed mismatch warning as it creates noise during valid game states
+
+      // Battle state tracking (delta logging handled by pollStateChanges)
+      this._lastBattleState = isInBattle;
+
+      return {
+        isInBattle,
+        battleType: battleFlags || 0,
+        battleTypeDescription: this.decodeBattleType(battleFlags || 0)
+      };
+    } catch (error) {
+      console.error('Error reading battle state:', error);
+      return null;
+    }
+  }
+
+  // Read enemy party (only when in battle)
+  readEnemyParty() {
+    try {
+      const pokemonSize = 100;
+      const dataStart = EmulatorManager.ADDRESSES.ENEMY_PARTY_DATA;
+      const party = [];
+
+      // Read up to 6 Pokemon, stopping when we hit an empty slot (PID = 0)
+      for (let i = 0; i < 6; i++) {
+        const pokemonAddr = dataStart + (i * pokemonSize);
+        const pid = this.readGBADword(pokemonAddr);
+
+        // Empty slot has PID of 0
+        if (pid === null || pid === 0) {
+          break;
+        }
+
+        const pokemonData = this.readPokemonData(pokemonAddr);
+        if (pokemonData) {
+          party.push(pokemonData);
+        }
+      }
+
+      // Reduced logging - only log if party size changed
+      if (!this._lastEnemyPartySize || this._lastEnemyPartySize !== party.length) {
+        console.log(`Enemy party count: ${party.length}`);
+        this._lastEnemyPartySize = party.length;
+      }
+      return party;
+    } catch (error) {
+      console.error('Error reading enemy party:', error);
+      return [];
+    }
+  }
+
+  // Read player position
+  readPlayerPosition() {
+    try {
+      const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
+      if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
+        return null;
+      }
+
+      const x = this.readGBAWord(sb1Ptr + EmulatorManager.ADDRESSES.SB1_X_POS);
+      const y = this.readGBAWord(sb1Ptr + EmulatorManager.ADDRESSES.SB1_Y_POS);
+
+      if (x === null || y === null) return null;
+
+      // Reduced logging - position changes frequently, don't spam console
+      return { x, y };
+    } catch (error) {
+      console.error('Error reading player position:', error);
+      return null;
+    }
+  }
+
+  // Read Pokedex progress
+  readPokedexProgress() {
+    try {
+      const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
+
+      // Debug first call
+      if (!this._pokedexDebugDone) {
+        console.log('🔍 Pokedex Debug:');
+        console.log('  - SaveBlock2 PTR address:', `0x${EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR.toString(16)}`);
+        console.log('  - SaveBlock2 pointer value:', sb2Ptr ? `0x${sb2Ptr.toString(16)}` : 'null');
+        console.log('  - Owned offset:', `0x${EmulatorManager.ADDRESSES.SB2_POKEDEX_OWNED.toString(16)}`);
+        console.log('  - Seen offset:', `0x${EmulatorManager.ADDRESSES.SB2_POKEDEX_SEEN.toString(16)}`);
+        this._pokedexDebugDone = true;
+      }
+
+      if (!sb2Ptr || sb2Ptr < 0x02000000 || sb2Ptr > 0x0203FFFF) {
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.warn(`Invalid SaveBlock2 pointer: ${sb2Ptr ? '0x' + sb2Ptr.toString(16) : 'null'}`);
+        }
+        return null;
+      }
+
+      // Read 52 bytes of flags (416 bits)
+      const seenAddr = sb2Ptr + EmulatorManager.ADDRESSES.SB2_POKEDEX_SEEN;
+      const ownedAddr = sb2Ptr + EmulatorManager.ADDRESSES.SB2_POKEDEX_OWNED;
+
+      const seenFlags = this.readGBABytes(seenAddr, 52);
+      const ownedFlags = this.readGBABytes(ownedAddr, 52);
+
+      if (!seenFlags || !ownedFlags) {
+        console.warn('Failed to read Pokedex flag bytes');
+        return null;
+      }
+
+      // Debug: Show first bytes
+      if (!this._pokedexBytesShown) {
+        console.log('  - Seen first 4 bytes:', seenFlags.slice(0, 4).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+        console.log('  - Owned first 4 bytes:', ownedFlags.slice(0, 4).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+        this._pokedexBytesShown = true;
+      }
+
+      // Count set bits
+      const countBits = (bytes) => {
+        let count = 0;
+        for (const byte of bytes) {
+          let b = byte;
+          while (b) {
+            count += b & 1;
+            b >>= 1;
+          }
+        }
+        return count;
+      };
+
+      const seen = countBits(seenFlags);
+      const caught = countBits(ownedFlags);
+
+      // Reduced logging - only log if counts changed
+      if (!this._lastPokedex || this._lastPokedex.caught !== caught || this._lastPokedex.seen !== seen) {
+        console.log(`📖 Pokedex: ${caught} caught, ${seen} seen`);
+        this._lastPokedex = { caught, seen };
+      }
+
+      return { caught, seen };
+    } catch (error) {
+      console.error('Error reading Pokedex:', error);
+      return null;
+    }
+  }
+
+  // Count bag items
+  readBagItemsCount() {
+    try {
+      const sb1Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK1_PTR);
+      if (!sb1Ptr || sb1Ptr < 0x02000000 || sb1Ptr > 0x0203FFFF) {
+        // Only log if game has loaded before
+        if (this._gameLoadedOnce) {
+          console.log('Invalid saveblock1 pointer for bag');
+        }
+        return null;
+      }
+
+      // Get security key for decryption
+      const sb2Ptr = this.readGBADword(EmulatorManager.ADDRESSES.SAVEBLOCK2_PTR);
+      const securityKey = sb2Ptr ? this.readGBADword(
+        sb2Ptr + EmulatorManager.ADDRESSES.SB2_SECURITY_KEY
+      ) : null;
+
+      const pockets = [
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_ITEMS, count: 30 },
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_KEY_ITEMS, count: 30 },
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_POKEBALLS, count: 16 },
+        { offset: EmulatorManager.ADDRESSES.SB1_BAG_BERRIES, count: 43 }
+      ];
+
+      let totalItems = 0;
+
+      for (const pocket of pockets) {
+        for (let i = 0; i < pocket.count; i++) {
+          const addr = sb1Ptr + pocket.offset + (i * EmulatorManager.ADDRESSES.ITEM_SLOT_SIZE);
+          const itemId = this.readGBAWord(addr);
+
+          // Item ID of 0 means empty slot
+          if (itemId === null || itemId === 0) {
+            continue;
+          }
+
+          totalItems++;
+        }
+      }
+
+      // Reduced logging - only log if count changed significantly (by 5+)
+      if (!this._lastBagCount || Math.abs(this._lastBagCount - totalItems) >= 5) {
+        console.log(`🎒 Bag items count: ${totalItems}`);
+        this._lastBagCount = totalItems;
+      }
+      return totalItems;
+    } catch (error) {
+      console.error('Error reading bag items:', error);
+      return null;
+    }
+  }
+
+  /*
+   * ============================================================================
+   * GAME STATE TRACKING SYSTEMS - Two Independent Systems
+   * ============================================================================
+   *
+   * This emulator implements TWO distinct game state tracking systems with
+   * different purposes and data formats:
+   *
+   * 1. DELTA EVENT SYSTEM (Real-time event stream)
+   *    - Purpose: Send real-time game events to external localhost server
+   *    - Format: Delta events (changes as they occur) + current state snapshot
+   *    - Frequency: Configurable (default 1 second batches)
+   *    - Use cases: Ambient lighting, OBS overlays, analytics, Discord bots
+   *    - Methods: pollStateChanges(), _recordEvent(), sendGameStateUpdate()
+   *    - Config: VITE_GAMESTATE_SERVER_ENABLED, VITE_GAMESTATE_SERVER_PORT
+   *
+   *    Example payload:
+   *    {
+   *      "timestamp": "2025-12-29T02:15:30.123Z",
+   *      "events": [
+   *        {
+   *          "type": "location_change",
+   *          "timestamp": "2025-12-29T02:15:30.120Z",
+   *          "data": { "from": "Route 1", "to": "Pallet Town" }
+   *        },
+   *        {
+   *          "type": "battle_start",
+   *          "timestamp": "2025-12-29T02:15:35.456Z",
+   *          "data": {}
+   *        }
+   *      ],
+   *      "currentState": {
+   *        "location": "Pallet Town",
+   *        "inBattle": true,
+   *        "money": 3000,
+   *        "badges": 0,
+   *        "playtime": 4275,
+   *        "party": [{ "nickname": "CHARIZARD", "level": 36, "currentHp": 120, "maxHp": 135 }]
+   *      }
+   *    }
+   *
+   * 2. SNAPSHOT SYSTEM (Periodic full state capture)
+   *    - Purpose: Capture complete game state for turn history/database
+   *    - Format: Full state snapshot (all data at point in time)
+   *    - Frequency: Every 30 seconds during active gameplay
+   *    - Use cases: Turn replays, progress tracking, admin panel display
+   *    - Methods: scrapeSnapshotData()
+   *    - Storage: Saved to PostgreSQL database via API
+   *
+   *    Example snapshot:
+   *    {
+   *      "location": "Pallet Town",
+   *      "money": 3000,
+   *      "badgeCount": 0,
+   *      "inGamePlaytime": 4275,
+   *      "playerX": 10,
+   *      "playerY": 15,
+   *      "isInBattle": false,
+   *      "pokedexSeenCount": 6,
+   *      "pokedexCaughtCount": 4,
+   *      "bagItemsCount": 12,
+   *      "partyData": [...]
+   *    }
+   *
+   * KEY DIFFERENCES:
+   * - Delta events = CHANGES ONLY (what happened)
+   * - Snapshots = FULL STATE (complete picture at moment in time)
+   * - Delta events = Real-time streaming
+   * - Snapshots = Periodic checkpoints
+   * - Delta events = Optional external integration
+   * - Snapshots = Core game history feature
+   *
+   * NO REDUNDANCY:
+   * - pollStateChanges() detects changes and records delta events
+   * - scrapeSnapshotData() reads full state independently
+   * - Both use same underlying memory read methods (readLocation, etc.)
+   * - No duplication of logic, just different purposes
+   * ============================================================================
+   */
+
+  // Poll game state and log only changes (delta logging)
+  // Also records delta events for external server if enabled
+  pollStateChanges() {
+    if (!this.isRunning) return;
+
+    try {
+      // Read current state
+      const location = this.readCurrentLocation();
+      const battleState = this.readBattleState();
+      const inBattle = battleState?.isInBattle || false;
+
+      // Mark game as loaded once we successfully read location
+      if (location && !this._gameLoadedOnce) {
+        this._gameLoadedOnce = true;
+        console.log('✅ Game loaded successfully');
+      }
+
+      // Check for location change
+      if (location && location !== this._lastKnownState.location) {
+        console.log(`📍 Location changed: ${this._lastKnownState.location || 'Unknown'} → ${location}`);
+        this._recordEvent('location_change', {
+          from: this._lastKnownState.location || 'Unknown',
+          to: location
+        });
+        this._lastKnownState.location = location;
+      }
+
+      // Check for battle state change
+      if (inBattle !== this._lastKnownState.inBattle) {
+        if (inBattle) {
+          console.log(`⚔️ Entered battle`);
+          this._recordEvent('battle_start', {});
+        } else {
+          console.log(`✅ Left battle`);
+          this._recordEvent('battle_end', {});
+        }
+        this._lastKnownState.inBattle = inBattle;
+        this._lastKnownState.enemyParty = []; // Reset enemy tracking
+      }
+
+      // Check for enemy party changes (only when in battle)
+      if (inBattle) {
+        const enemyParty = this.readEnemyParty();
+        if (enemyParty && enemyParty.length > 0) {
+          // Check if enemy party composition or HP changed
+          let hasChange = false;
+          let hasSignificantChange = false; // Track non-HP changes
+          const changes = [];
+
+          if (enemyParty.length !== this._lastKnownState.enemyParty.length) {
+            hasChange = true;
+            hasSignificantChange = true;
+          } else {
+            enemyParty.forEach((pokemon, i) => {
+              const lastPokemon = this._lastKnownState.enemyParty[i];
+              if (!lastPokemon) {
+                hasChange = true;
+                hasSignificantChange = true;
+                const pokemonName = pokemon.species || pokemon.nickname || 'Unknown';
+                const pokemonType = this.getPokemonType(pokemonName);
+                changes.push(`  + ${pokemonName} (Type: ${pokemonType}) Lv.${pokemon.level} appeared`);
+                this._recordEvent('enemy_appeared', {
+                  pokemon: pokemonName,
+                  type: pokemonType,
+                  level: pokemon.level,
+                  hp: pokemon.currentHP,
+                  maxHp: pokemon.maxHP
+                });
+              } else {
+                // Check for Pokemon change using PID (more reliable than species name)
+                // PID is unique per Pokemon and doesn't require decryption
+                const currentPid = pokemon.pid;
+                const lastPid = lastPokemon.pid;
+
+                // Debug logging for PID comparison
+                if (currentPid !== lastPid) {
+                  console.log(`🔍 PID change detected at position ${i}:`);
+                  console.log(`  Last: ${lastPid} (${lastPokemon.species || lastPokemon.nickname || 'Unknown'})`);
+                  console.log(`  Current: ${currentPid} (${pokemon.species || pokemon.nickname || 'Unknown'})`);
+                }
+
+                if (currentPid !== lastPid) {
+                  hasChange = true;
+                  hasSignificantChange = true;
+                  const pokemonName = pokemon.species || pokemon.nickname || 'Unknown';
+                  changes.push(`  ↻ Switched to ${pokemonName} Lv.${pokemon.level}`);
+
+                  // Get Pokemon type for LED server
+                  const pokemonType = this.getPokemonType(pokemonName);
+                  console.log(`🔄 Enemy switched to: ${pokemonName} (Type: ${pokemonType})`);
+
+                  this._recordEvent('enemy_switched', {
+                    pokemon: pokemonName,
+                    type: pokemonType,
+                    level: pokemon.level,
+                    hp: pokemon.currentHP,
+                    maxHp: pokemon.maxHP
+                  });
+                }
+                // Check for HP change
+                else if (pokemon.currentHP !== lastPokemon.currentHP) {
+                  hasChange = true;
+                  // HP changes are tracked but not sent to LED server (no _recordEvent)
+                  // This reduces LED server traffic for frequent HP updates
+                }
+              }
+            });
+          }
+
+          if (hasChange) {
+            // Only log "Enemy party changed" for significant changes (not just HP)
+            if (hasSignificantChange) {
+              console.log(`👾 Enemy party changed:`);
+              if (changes.length > 0) {
+                changes.forEach(change => console.log(change));
+              } else {
+                enemyParty.forEach((pokemon, i) => {
+                  const pokemonName = pokemon.species || pokemon.nickname || 'Unknown';
+                  const pokemonType = this.getPokemonType(pokemonName);
+                  console.log(`  ${i + 1}. ${pokemonName} (Type: ${pokemonType}) Lv.${pokemon.level || '?'} - HP: ${pokemon.currentHP || 0}/${pokemon.maxHP || 0}`);
+                });
+              }
+            }
+            this._lastKnownState.enemyParty = enemyParty.map(p => ({ ...p }));
+          }
+        }
+      }
+
+      // Check for party Pokemon level ups
+      const party = this.readPartyData();
+      if (party && Array.isArray(party) && party.length > 0) {
+        party.forEach((pokemon) => {
+          if (!pokemon || !pokemon.pid) return;
+
+          const pid = pokemon.pid;
+          const currentLevel = pokemon.level || 0;
+          const nickname = pokemon.nickname || 'Unknown';
+
+          // Check if we've seen this Pokemon before
+          if (this._lastKnownParty.has(pid)) {
+            const lastData = this._lastKnownParty.get(pid);
+            const lastLevel = lastData.level || 0;
+
+            // Detect level up
+            if (currentLevel > lastLevel) {
+              const levelGain = currentLevel - lastLevel;
+              console.log(`🆙 ${nickname} leveled up! Lv.${lastLevel} → Lv.${currentLevel} (+${levelGain})`);
+              this._recordEvent('level_up', {
+                pokemon: nickname,
+                oldLevel: lastLevel,
+                newLevel: currentLevel
+              });
+            }
+          }
+
+          // Update tracking
+          this._lastKnownParty.set(pid, {
+            nickname,
+            level: currentLevel
+          });
+        });
+
+        // Clean up Pokemon that are no longer in party (released, deposited in PC)
+        const currentPids = new Set(party.map(p => p.pid).filter(Boolean));
+        for (const pid of this._lastKnownParty.keys()) {
+          if (!currentPids.has(pid)) {
+            this._lastKnownParty.delete(pid);
+          }
+        }
+      }
+    } catch (error) {
+      // Silent - don't spam console with errors
+    }
+  }
+
+  // Send collected game state events to localhost server (if enabled)
+  // NOTE: This sends delta events PLUS current state snapshot for context
+  // For turn history snapshots, see scrapeSnapshotData() (saved to database)
+  async sendGameStateUpdate() {
+    // If server not available, just do cleanup to prevent memory leaks
+    if (!this._gameStateConfig.enabled || !this._gameStateServerAvailable) {
+      // SAFETY: Prevent memory leak - clear events older than buffer limit
+      if (this._pendingEvents.length > 200) {
+        const eventsToKeep = 100;
+        const eventsDropped = this._pendingEvents.length - eventsToKeep;
+        this._pendingEvents = this._pendingEvents.slice(-eventsToKeep);
+        if (import.meta.env.DEV) {
+          console.warn(`📝 Event buffer cleanup: dropped ${eventsDropped} old events (server not available)`);
+        }
+      }
+      return;
+    }
+
+    // PERFORMANCE: Early exit if no events to send
+    if (this._pendingEvents.length === 0) return;
+
+    try {
+      // SAFETY: Cap events array to prevent memory bloat
+      if (this._pendingEvents.length > 100) {
+        console.warn('Event buffer overflow, dropping old events');
+        this._pendingEvents = this._pendingEvents.slice(-100);
+      }
+
+      // Collect current state snapshot for context
+      const currentState = {
+        location: this._lastKnownState.location || null,
+        inBattle: this._lastKnownState.inBattle || false,
+        money: this.readMoney(),
+        badges: this.readBadgeCount(),
+        playtime: this._lastPlaytimeSeconds,
+        party: (this.readPartyData() || []).map(p => ({
+          nickname: p.nickname,
+          level: p.level,
+          currentHp: p.currentHP,
+          maxHp: p.maxHP
+        }))
+      };
+
+      // Build payload - delta events + current state
+      // NOTE: Create a copy of events, don't clear original array yet
+      const payload = {
+        timestamp: new Date().toISOString(),
+        events: [...this._pendingEvents], // Copy events, don't remove yet
+        currentState
+      };
+
+      // Send to localhost server
+      const url = `http://localhost:${this._gameStateConfig.port}/gamestate`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        // PERFORMANCE: Don't wait too long if server is down
+        signal: AbortSignal.timeout(2000)
+      });
+
+      if (!response.ok) {
+        console.warn(`Game state server returned ${response.status}`);
+        // Don't clear events on error - they'll be retried next interval
+      } else {
+        // SUCCESS: Clear events only after successful send
+        this._pendingEvents = [];
+        // Reset offline flag on successful send
+        this._gameStateServerOffline = false;
+        // Log successful send in development
+        if (import.meta.env.DEV) {
+          console.log(`✅ Sent ${payload.events.length} events to LED server`);
+        }
+      }
+    } catch (error) {
+      // Silently fail if server is offline - don't spam console
+      // Only log on first failure
+      if (!this._gameStateServerOffline) {
+        console.warn(`Game state server not responding at localhost:${this._gameStateConfig.port} - events will be recorded locally but not sent`);
+        this._gameStateServerOffline = true;
+      }
+      // Keep events in buffer for retry on next interval
+      // But cap to prevent memory leak
+      if (this._pendingEvents.length > 200) {
+        console.warn('Event buffer too large, clearing oldest events');
+        this._pendingEvents = this._pendingEvents.slice(-100);
+      }
+    }
+  }
+
+  // Start polling for state changes (call after game starts)
+  startStatePolling() {
+    if (this._statePollingInterval) return; // Already polling
+
+    console.log('🔄 Started state change polling (1Hz)');
+    this._statePollingInterval = setInterval(() => {
+      this.pollStateChanges();
+    }, 1000); // Poll every 1 second
+
+    // ALWAYS start the game state interval to handle event sending and cleanup
+    // Even if server is not available, we need to prevent memory leaks
+    console.log(`🌐 Starting game state event management`);
+    this._gameStateInterval = setInterval(() => {
+      this.sendGameStateUpdate();
+    }, this._gameStateConfig.interval);
+
+    // Log server status
+    if (this._gameStateConfig.enabled && this._gameStateServerAvailable) {
+      console.log(`   → LED server detected, events will be sent to localhost:${this._gameStateConfig.port}`);
+    } else {
+      console.log(`   → LED server not available, events logged locally only`);
+    }
+  }
+
+  // Stop polling
+  stopStatePolling() {
+    if (this._statePollingInterval) {
+      clearInterval(this._statePollingInterval);
+      this._statePollingInterval = null;
+      console.log('⏸️ Stopped state change polling');
+    }
+
+    // Stop game state updates
+    if (this._gameStateInterval) {
+      clearInterval(this._gameStateInterval);
+      this._gameStateInterval = null;
+      console.log('⏸️ Stopped game state updates');
+    }
+  }
+
+  // Main snapshot scraper (combines all data)
+  // NOTE: This returns FULL STATE SNAPSHOT (complete game state at point in time)
+  // For delta events (changes only), see pollStateChanges() and sendGameStateUpdate()
+  // See documentation above pollStateChanges() for detailed comparison of both systems
+  async scrapeSnapshotData() {
+    // Reduced logging - snapshots are called every 30s, don't spam console
+
+    if (!this.isRunning) {
+      console.log('Emulator not running, returning null');
+      return null;
+    }
+
+    try {
+      // Get existing data
+      const baseData = {
+        location: this.readCurrentLocation(),
+        badges: this.readBadgeCount(),
+        playtime: this.readPlaytime(),
+        money: this.readMoney(),
+        party: this.readPartyData()
+      };
+
+      // Get new snapshot data
+      const position = this.readPlayerPosition();
+      const battleState = this.readBattleState();
+      const pokedex = this.readPokedexProgress();
+      const bagCount = this.readBagItemsCount();
+
+      // Convert playtime to seconds
+      let playtimeSeconds = 0;
+      const playtimeObj = baseData.playtime;
+      if (playtimeObj && typeof playtimeObj === 'object') {
+        playtimeSeconds = (playtimeObj.hours || 0) * 3600 +
+                         (playtimeObj.minutes || 0) * 60 +
+                         (playtimeObj.seconds || 0);
+      }
+
+      // Validate that we got meaningful data before creating snapshot
+      // During battle transitions, SaveBlock pointers can be temporarily invalid
+      const hasValidData = baseData.location !== null ||
+                          baseData.money !== null ||
+                          playtimeSeconds > 0;
+
+      if (!hasValidData) {
+        console.warn('⚠️ Skipping snapshot: memory reads returned all null (likely during battle transition)');
+        return null;
+      }
+
+      const snapshotData = {
+        location: baseData.location,
+        money: baseData.money,
+        badgeCount: baseData.badges,
+        inGamePlaytime: playtimeSeconds,
+        playerX: position?.x || null,
+        playerY: position?.y || null,
+        isInBattle: battleState?.isInBattle || false,
+        battleType: battleState?.battleType || null,
+        enemyParty: null,
+        pokedexSeenCount: pokedex?.seen || null,
+        pokedexCaughtCount: pokedex?.caught || null,
+        bagItemsCount: bagCount,
+        partyData: baseData.party
+      };
+
+      // Only read enemy party if in battle
+      if (snapshotData.isInBattle) {
+        snapshotData.enemyParty = this.readEnemyParty();
+      }
+
+      // Logging handled by individual read methods when values change
+      return snapshotData;
+    } catch (error) {
+      console.error('Failed to scrape snapshot data:', error);
       return null;
     }
   }
@@ -1716,9 +2771,52 @@ class EmulatorManager {
     return bytes.map(byte => charMap[byte] || '').join('').trim();
   }
 
+  // Get Pokemon type from name (for LED server integration)
+  getPokemonType(pokemonName) {
+    if (!pokemonName) return 'normal';
+
+    const name = pokemonName.toLowerCase().trim();
+
+    // Map of Pokemon to their primary type (matching LED server)
+    const typeMap = {
+      // Grass starters
+      'bulbasaur': 'grass', 'ivysaur': 'grass', 'venusaur': 'grass',
+      // Fire starters
+      'charmander': 'fire', 'charmeleon': 'fire', 'charizard': 'fire',
+      // Water starters
+      'squirtle': 'water', 'wartortle': 'water', 'blastoise': 'water',
+      // Electric
+      'pikachu': 'electric', 'raichu': 'electric',
+      'magnemite': 'electric', 'magneton': 'electric',
+      'voltorb': 'electric', 'electrode': 'electric',
+      // Water types
+      'psyduck': 'water', 'golduck': 'water',
+      'poliwag': 'water', 'poliwhirl': 'water', 'poliwrath': 'water',
+      'tentacool': 'water', 'tentacruel': 'water',
+      'slowpoke': 'water', 'slowbro': 'water',
+      'magikarp': 'water', 'gyarados': 'water',
+      // Fire types
+      'vulpix': 'fire', 'ninetales': 'fire',
+      'growlithe': 'fire', 'arcanine': 'fire',
+      // Bug types
+      'caterpie': 'bug', 'metapod': 'bug', 'butterfree': 'bug',
+      'weedle': 'bug', 'kakuna': 'bug', 'beedrill': 'bug',
+      // Poison types
+      'ekans': 'poison', 'arbok': 'poison',
+      'zubat': 'poison', 'golbat': 'poison',
+      // Normal types
+      'pidgey': 'normal', 'pidgeotto': 'normal', 'pidgeot': 'normal',
+      'rattata': 'normal', 'raticate': 'normal',
+      'spearow': 'normal', 'fearow': 'normal',
+    };
+
+    return typeMap[name] || 'normal';
+  }
+
   destroy() {
     console.log('Destroying emulator instance...');
     this.isRunning = false;
+    this.stopStatePolling();
   }
 
   // Simulate a button press for attract mode

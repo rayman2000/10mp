@@ -18,6 +18,7 @@ const path = require('path');
 console.log('Loading models...');
 const { sequelize } = require('./models');
 const GameTurn = require('./models').GameTurn;
+const GameStateSnapshot = require('./models').GameStateSnapshot;
 const { isValidKioskToken } = require('./utils/kioskToken');
 const saveStateStorage = require('./services/saveStateStorage');
 const romStorage = require('./services/romStorage');
@@ -922,6 +923,88 @@ app.get('/api/game-turns/:id', async (req, res) => {
   }
 });
 
+// Snapshot endpoints
+app.post('/api/game-turns/:turnId/snapshots/batch', async (req, res) => {
+  try {
+    const { turnId } = req.params;
+    const { snapshots } = req.body;
+
+    // Validate turn exists
+    const turn = await GameTurn.findByPk(turnId);
+    if (!turn) {
+      return res.status(404).json({ error: 'Game turn not found' });
+    }
+
+    // Validate snapshots array
+    if (!Array.isArray(snapshots) || snapshots.length === 0) {
+      return res.status(400).json({ error: 'Snapshots must be a non-empty array' });
+    }
+
+    // Create all snapshots in a transaction
+    const createdSnapshots = await sequelize.transaction(async (t) => {
+      const snapshotPromises = snapshots.map(snapshot =>
+        GameStateSnapshot.create({
+          gameTurnId: turnId,
+          sequenceNumber: snapshot.sequenceNumber,
+          capturedAt: snapshot.capturedAt || new Date(),
+          inGamePlaytime: snapshot.inGamePlaytime,
+          playerX: snapshot.playerX,
+          playerY: snapshot.playerY,
+          location: snapshot.location,
+          money: snapshot.money,
+          badgeCount: snapshot.badgeCount,
+          isInBattle: snapshot.isInBattle || false,
+          battleType: snapshot.battleType,
+          enemyParty: snapshot.enemyParty,
+          pokedexSeenCount: snapshot.pokedexSeenCount,
+          pokedexCaughtCount: snapshot.pokedexCaughtCount,
+          bagItemsCount: snapshot.bagItemsCount,
+          partyData: snapshot.partyData
+        }, { transaction: t })
+      );
+
+      return await Promise.all(snapshotPromises);
+    });
+
+    console.log(`Created ${createdSnapshots.length} snapshots for turn ${turnId}`);
+    res.status(201).json({
+      success: true,
+      count: createdSnapshots.length,
+      snapshots: createdSnapshots
+    });
+  } catch (error) {
+    console.error('Error creating snapshots:', error);
+
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({
+        error: 'Duplicate snapshot sequence number detected'
+      });
+    }
+
+    res.status(500).json({ error: 'Failed to create snapshots' });
+  }
+});
+
+app.get('/api/game-turns/:turnId/snapshots', async (req, res) => {
+  try {
+    const { turnId } = req.params;
+
+    const snapshots = await GameStateSnapshot.findAll({
+      where: { gameTurnId: turnId },
+      order: [['sequenceNumber', 'ASC']]
+    });
+
+    res.json({
+      turnId,
+      count: snapshots.length,
+      snapshots
+    });
+  } catch (error) {
+    console.error('Error fetching snapshots:', error);
+    res.status(500).json({ error: 'Failed to fetch snapshots' });
+  }
+});
+
 app.get('/api/stats', async (req, res) => {
   try {
     // Count only valid (non-invalidated) turns
@@ -967,30 +1050,6 @@ app.get('/api/stats', async (req, res) => {
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// System info endpoint - returns local IP addresses for debugging
-app.get('/api/system/ip', (req, res) => {
-  const os = require('os');
-  const interfaces = os.networkInterfaces();
-  const addresses = [];
-
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      // Skip internal (loopback) and non-IPv4 addresses
-      if (iface.family === 'IPv4' && !iface.internal) {
-        addresses.push({
-          interface: name,
-          address: iface.address
-        });
-      }
-    }
-  }
-
-  res.json({
-    hostname: os.hostname(),
-    addresses
-  });
 });
 
 // Production static file serving (when built frontends are available)

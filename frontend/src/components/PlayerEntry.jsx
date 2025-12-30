@@ -5,14 +5,34 @@ const PlayerEntry = memo(({ previousMessage, onStartGame, saveDataReady = true }
   const [playerName, setPlayerName] = useState('');
   const inputRef = useRef(null);
 
-  // Focus input on mount with a delay to override emulator focus
+  // Aggressive focus management for kiosk mode
   useEffect(() => {
-    const focusInput = () => inputRef.current?.focus();
-    // Immediate focus
-    focusInput();
-    // Delayed focus to override any competing focus
-    const timer = setTimeout(focusInput, 100);
-    return () => clearTimeout(timer);
+    const focusInput = () => {
+      if (inputRef.current && document.activeElement !== inputRef.current) {
+        inputRef.current.focus();
+      }
+    };
+
+    // Multiple focus attempts to override competing focus
+    focusInput(); // Immediate
+    const timer1 = setTimeout(focusInput, 50);
+    const timer2 = setTimeout(focusInput, 200);
+    const timer3 = setTimeout(focusInput, 500);
+
+    // Refocus if user clicks anywhere on the screen
+    const handleClick = () => focusInput();
+    document.addEventListener('click', handleClick);
+
+    // Periodic refocus to maintain focus (every 2 seconds)
+    const refocusInterval = setInterval(focusInput, 2000);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+      clearInterval(refocusInterval);
+      document.removeEventListener('click', handleClick);
+    };
   }, []);
 
   const canStart = playerName.trim() && saveDataReady;
@@ -32,10 +52,6 @@ const PlayerEntry = memo(({ previousMessage, onStartGame, saveDataReady = true }
 
   return (
     <div className="player-entry">
-      <div className="play-now-arrow">
-        <span className="arrow-text">Play now!</span>
-        <span className="arrow-icon">&#10148;</span>
-      </div>
       <div className="entry-container">
         <div className="game-header">
           <h1>10 Minute Pokemon</h1>
@@ -46,7 +62,7 @@ const PlayerEntry = memo(({ previousMessage, onStartGame, saveDataReady = true }
           <h2>Message from the previous player:</h2>
           <p>{previousMessage}</p>
         </div>
-        
+
         <div className="name-form">
           <label htmlFor="playerName">Enter your name and press Enter:</label>
           <input

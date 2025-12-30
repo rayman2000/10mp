@@ -26,8 +26,16 @@ function App() {
   const [prefetchedSaveData, setPrefetchedSaveData] = useState(null); // Pre-fetched save data
   const [saveDataReady, setSaveDataReady] = useState(false); // Track if save fetch is complete
   const [pendingTurnData, setPendingTurnData] = useState(null); // Turn data waiting for message
-  const [config, setConfig] = useState({
-    turnDurationMinutes: parseInt(import.meta.env.VITE_TURN_DURATION_MINUTES, 10) || 10
+
+  // Read config from environment and URL parameters
+  const [config, setConfig] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const pollIntervalParam = urlParams.get('pollInterval');
+
+    return {
+      turnDurationMinutes: parseInt(import.meta.env.VITE_TURN_DURATION_MINUTES, 10) || 10,
+      gameStatePollInterval: pollIntervalParam ? parseInt(pollIntervalParam, 10) : 200
+    };
   });
 
   // Pre-fetch save data when kiosk is approved (before player enters name)
@@ -83,8 +91,18 @@ function App() {
   }, [kioskApproved, saveDataReady]);
 
   // Handler for successful kiosk activation
-  const handleKioskActivated = useCallback(() => {
-    console.log('Kiosk activated');
+  const handleKioskActivated = useCallback((kioskConfig = {}) => {
+    console.log('Kiosk activated', kioskConfig);
+
+    // Update config with kiosk-provided settings
+    if (kioskConfig.pollInterval) {
+      setConfig(prev => ({
+        ...prev,
+        gameStatePollInterval: kioskConfig.pollInterval
+      }));
+      console.log(`⚙️ Poll interval set from kiosk: ${kioskConfig.pollInterval}ms`);
+    }
+
     setKioskApproved(true); // Mark kiosk as approved (triggers save pre-fetch)
     // Move to player entry screen
     setCurrentScreen('entry');

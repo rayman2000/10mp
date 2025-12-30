@@ -156,6 +156,91 @@
   user-select: all;
 }
 
+/* Connection status indicators */
+.kiosk-debug-value.connected {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.kiosk-debug-value.disconnected {
+  color: #f44336;
+  font-weight: bold;
+}
+
+/* Multi-line IP display */
+.kiosk-ip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.kiosk-ip-entry {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: #f5f5f5;
+  border-radius: 3px;
+  border-left: 3px solid #4caf50;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kiosk-ip-entry:first-child {
+  border-left-color: #2196f3; /* Blue for primary interface */
+}
+
+.kiosk-config {
+  margin-top: 15px;
+  padding: 15px;
+  background: #e8f5e9;
+  border-radius: 8px;
+  border: 1px solid #66bb6a;
+}
+
+.kiosk-config-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2e7d32;
+  cursor: pointer;
+}
+
+.kiosk-config-input {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  padding: 8px 12px;
+  border: 2px solid #66bb6a;
+  border-radius: 6px;
+  background: white;
+  color: #333;
+  text-align: center;
+  transition: all 0.2s ease;
+  width: 120px;
+  margin: 0 auto;
+}
+
+.kiosk-config-input:focus {
+  outline: none;
+  border-color: #2e7d32;
+  box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
+}
+
+.kiosk-config-input:hover {
+  border-color: #2e7d32;
+}
+
+.kiosk-config-hint {
+  display: block;
+  font-size: 12px;
+  color: #558b2f;
+  margin-top: 8px;
+  font-weight: 400;
+}
+
 .kiosk-success {
   font-size: 80px;
   color: #4caf50;

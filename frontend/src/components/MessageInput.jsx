@@ -30,13 +30,29 @@ const MessageInput = memo(({ player, pendingTurnData, onMessageSubmit }) => {
     try {
       // Save turn data with message to backend
       if (pendingTurnData) {
+        // Extract snapshots from turn data (don't send with turn creation)
+        const { snapshots, ...turnDataWithoutSnapshots } = pendingTurnData;
+
         const turnDataWithMessage = {
-          ...pendingTurnData,
+          ...turnDataWithoutSnapshots,
           message: finalMessage
         };
+
         console.log('Saving turn data with message:', turnDataWithMessage);
-        await gameApi.saveGameTurn(turnDataWithMessage);
-        console.log('Turn data saved successfully!');
+        const savedTurn = await gameApi.saveGameTurn(turnDataWithMessage);
+        console.log('Turn data saved successfully!', savedTurn);
+
+        // Now save snapshots if we have any
+        if (snapshots && snapshots.length > 0 && savedTurn.id) {
+          console.log(`Saving ${snapshots.length} snapshots for turn ${savedTurn.id}...`);
+          try {
+            await gameApi.saveSnapshots(savedTurn.id, snapshots);
+            console.log('Snapshots saved successfully!');
+          } catch (snapshotError) {
+            console.error('Failed to save snapshots (non-critical):', snapshotError);
+            // Don't fail the whole submission if snapshots fail
+          }
+        }
       } else {
         console.warn('No pending turn data to save');
       }

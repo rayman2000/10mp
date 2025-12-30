@@ -96,6 +96,13 @@ export const useEmulator = (config = {}, approved = false) => {
     return null;
   }, []);
 
+  const scrapeSnapshotData = useCallback(async () => {
+    if (emulatorRef.current) {
+      return await emulatorRef.current.scrapeSnapshotData();
+    }
+    return null;
+  }, []);
+
   // Debug function to test memory access - call from browser console
   const debugMemory = useCallback(() => {
     if (emulatorRef.current) {
@@ -121,6 +128,15 @@ export const useEmulator = (config = {}, approved = false) => {
     // Fallback if emulator not ready
     const buttons = ['a', 'b', 'up', 'down', 'left', 'right'];
     return buttons[Math.floor(Math.random() * buttons.length)];
+  }, []);
+
+  // Configure game state polling interval
+  const setGameStateInterval = useCallback((intervalMs) => {
+    if (emulatorRef.current) {
+      return emulatorRef.current.setGameStateInterval(intervalMs);
+    }
+    console.warn('Cannot set game state interval - emulator not initialized');
+    return false;
   }, []);
 
   // Expose debug function globally for easy console access
@@ -151,8 +167,10 @@ export const useEmulator = (config = {}, approved = false) => {
     saveGame,
     loadGame,
     scrapeData,
+    scrapeSnapshotData,
     debugMemory,
     simulateKeyPress,
-    getRandomAttractButton
+    getRandomAttractButton,
+    setGameStateInterval
   };
 };

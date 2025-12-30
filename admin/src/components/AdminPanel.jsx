@@ -21,6 +21,30 @@ const AdminPanel = () => {
   const [message, setMessage] = useState('');
   const [selectedTurn, setSelectedTurn] = useState(null);
   const [hideInvalidated, setHideInvalidated] = useState(false);
+  const [turnSnapshots, setTurnSnapshots] = useState([]);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
+  const [snapshotPage, setSnapshotPage] = useState(0);
+  const SNAPSHOTS_PER_PAGE = 5;
+
+  // Handle turn selection and fetch snapshots
+  const handleTurnClick = async (turn) => {
+    setSelectedTurn(turn);
+    setLoadingSnapshots(true);
+    setTurnSnapshots([]);
+    setSnapshotPage(0); // Reset to first page
+
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${API_URL}/api/game-turns/${turn.id}/snapshots`);
+      const data = await response.json();
+      setTurnSnapshots(data.snapshots || []);
+    } catch (error) {
+      console.error('Error loading snapshots:', error);
+      setTurnSnapshots([]);
+    } finally {
+      setLoadingSnapshots(false);
+    }
+  };
 
   // ROM management state
   const [roms, setRoms] = useState([]);
@@ -320,6 +344,83 @@ const AdminPanel = () => {
     return `₽${amount.toLocaleString()}`;
   };
 
+  // Snapshot Item Component
+  const SnapshotItem = ({ snapshot }) => {
+    const [expanded, setExpanded] = React.useState(false);
+
+    // Safe data extraction with defaults
+    const sequenceNum = snapshot?.sequenceNumber ?? 0;
+    // Show in-game playtime instead of real-world time
+    const timeStr = snapshot?.inGamePlaytime
+      ? formatPlaytime(snapshot.inGamePlaytime)
+      : '--:--:--';
+    const location = snapshot?.location || 'Unknown Location';
+    const badgeCount = snapshot?.badgeCount ?? 0;
+    const caughtCount = snapshot?.pokedexCaughtCount ?? 0;
+    const isInBattle = snapshot?.isInBattle ?? false;
+
+    return (
+      <div className={`snapshot-item ${expanded ? 'expanded' : 'collapsed'}`}>
+        <div
+          className="snapshot-header"
+          onClick={() => setExpanded(!expanded)}
+          style={{ cursor: 'pointer' }}
+        >
+          <div className="snapshot-header-left">
+            <span className="snapshot-number">#{sequenceNum}</span>
+            <span className="snapshot-time-compact">{timeStr}</span>
+            <span className="snapshot-location">{location}</span>
+          </div>
+          <div className="snapshot-header-right">
+            {isInBattle && (
+              <span className="battle-badge">⚔️ BATTLE</span>
+            )}
+            <span className="snapshot-quick-stat">
+              Lv{badgeCount} • {caughtCount}★
+            </span>
+            <span className="expand-icon">{expanded ? '▼' : '▶'}</span>
+          </div>
+        </div>
+        {expanded && (
+          <div className="snapshot-details">
+            <div className="snapshot-grid">
+              <div className="snapshot-row">
+                <strong>Position:</strong> ({snapshot.playerX}, {snapshot.playerY})
+              </div>
+              <div className="snapshot-row">
+                <strong>Money:</strong> {formatMoney(snapshot.money)}
+              </div>
+              <div className="snapshot-row">
+                <strong>Badges:</strong> {snapshot.badgeCount || 0}
+              </div>
+              <div className="snapshot-row">
+                <strong>Pokedex:</strong> {snapshot.pokedexCaughtCount || 0} caught / {snapshot.pokedexSeenCount || 0} seen
+              </div>
+              <div className="snapshot-row">
+                <strong>Bag Items:</strong> {snapshot.bagItemsCount || 0} unique items
+              </div>
+              <div className="snapshot-row">
+                <strong>Playtime:</strong> {formatPlaytime(snapshot.inGamePlaytime)}
+              </div>
+            </div>
+            {snapshot.isInBattle && snapshot.enemyParty && snapshot.enemyParty.length > 0 && (
+              <div className="snapshot-battle-info">
+                <strong>Enemy Party:</strong>
+                <div className="enemy-party">
+                  {snapshot.enemyParty.map((pokemon, i) => (
+                    <span key={i} className="enemy-pokemon">
+                      {pokemon.nickname} Lv.{pokemon.level} ({pokemon.currentHP}/{pokemon.maxHP} HP)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Turn Detail Modal Component
   const TurnDetailModal = ({ turn, onClose }) => {
     if (!turn) return null;
@@ -417,6 +518,68 @@ const AdminPanel = () => {
               )}
             </div>
 
+            <div className="detail-section">
+              <h3>Snapshot Timeline ({turnSnapshots.length} snapshots)</h3>
+              {loadingSnapshots ? (
+                <p className="loading-text">Loading snapshots...</p>
+              ) : turnSnapshots.length > 0 ? (
+                <>
+                  {turnSnapshots.length > 0 && (
+                    <div className="snapshot-summary">
+                      <div className="summary-stat">
+                        <span className="stat-label">Duration:</span>
+                        <span className="stat-value">{Math.floor((turnSnapshots[turnSnapshots.length - 1]?.inGamePlaytime - turnSnapshots[0]?.inGamePlaytime) / 60)}m</span>
+                      </div>
+                      <div className="summary-stat">
+                        <span className="stat-label">Battles:</span>
+                        <span className="stat-value">{turnSnapshots.filter(s => s.isInBattle).length}</span>
+                      </div>
+                      <div className="summary-stat">
+                        <span className="stat-label">Progress:</span>
+                        <span className="stat-value">
+                          {turnSnapshots[0]?.pokedexCaughtCount || 0} → {turnSnapshots[turnSnapshots.length - 1]?.pokedexCaughtCount || 0} caught
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pagination controls */}
+                  {turnSnapshots.length > SNAPSHOTS_PER_PAGE && (
+                    <div className="snapshot-pagination">
+                      <button
+                        className="pagination-btn"
+                        onClick={() => setSnapshotPage(prev => Math.max(0, prev - 1))}
+                        disabled={snapshotPage === 0}
+                      >
+                        ← Previous
+                      </button>
+                      <span className="pagination-info">
+                        Page {snapshotPage + 1} of {Math.ceil(turnSnapshots.length / SNAPSHOTS_PER_PAGE)}
+                        {' '}({snapshotPage * SNAPSHOTS_PER_PAGE + 1}-{Math.min((snapshotPage + 1) * SNAPSHOTS_PER_PAGE, turnSnapshots.length)} of {turnSnapshots.length})
+                      </span>
+                      <button
+                        className="pagination-btn"
+                        onClick={() => setSnapshotPage(prev => Math.min(Math.ceil(turnSnapshots.length / SNAPSHOTS_PER_PAGE) - 1, prev + 1))}
+                        disabled={snapshotPage >= Math.ceil(turnSnapshots.length / SNAPSHOTS_PER_PAGE) - 1}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="snapshot-timeline">
+                    {turnSnapshots
+                      .slice(snapshotPage * SNAPSHOTS_PER_PAGE, (snapshotPage + 1) * SNAPSHOTS_PER_PAGE)
+                      .map((snapshot) => (
+                        <SnapshotItem key={snapshot.id} snapshot={snapshot} />
+                      ))}
+                  </div>
+                </>
+              ) : (
+                <p className="no-snapshots">No snapshots recorded for this turn</p>
+              )}
+            </div>
+
             {turn.invalidatedAt && (
               <div className="detail-section detail-section-warning">
                 <h3>Invalidation</h3>
@@ -483,7 +646,13 @@ const AdminPanel = () => {
   return (
     <div className="admin-panel">
       {selectedTurn && (
-        <TurnDetailModal turn={selectedTurn} onClose={() => setSelectedTurn(null)} />
+        <TurnDetailModal
+          turn={selectedTurn}
+          onClose={() => {
+            setSelectedTurn(null);
+            setTurnSnapshots([]);
+          }}
+        />
       )}
       <div className="admin-header">
         <h1>10MP Admin Panel</h1>
@@ -703,7 +872,7 @@ const AdminPanel = () => {
                   <div
                     key={turn.id}
                     className={`save-item save-item-clickable ${turn.invalidatedAt ? 'save-item-invalidated' : ''}`}
-                    onClick={() => setSelectedTurn(turn)}
+                    onClick={() => handleTurnClick(turn)}
                   >
                     <div className="save-info">
                       <div className="save-time">

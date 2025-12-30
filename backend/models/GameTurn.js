@@ -89,5 +89,12 @@ module.exports = (sequelize, DataTypes) => {
   ]
 });
 
+  GameTurn.associate = function(models) {
+    GameTurn.hasMany(models.GameStateSnapshot, {
+      foreignKey: 'gameTurnId',
+      as: 'snapshots'
+    });
+  };
+
   return GameTurn;
 };

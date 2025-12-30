@@ -32,30 +32,45 @@ const KioskConnect = ({ onConnect }) => {
   const [status, setStatus] = useState('generating'); // 'generating', 'registering', 'waiting', 'activated', 'error'
   const [error, setError] = useState('');
   const [deviceIp, setDeviceIp] = useState('');
+  const [localServerConnected, setLocalServerConnected] = useState(false);
+  const [pollInterval, setPollInterval] = useState(200); // Default 200ms polling interval
   const pollIntervalRef = useRef(null);
   const onConnectRef = useRef(onConnect);
 
-  // Fetch the device's local IP address from backend
+  // Fetch local IP from Python LED server health check
   useEffect(() => {
-    const fetchDeviceIp = async () => {
+    const fetchLocalServerInfo = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/system/ip`);
+        const response = await fetch('http://localhost:3333/health');
         if (response.ok) {
           const data = await response.json();
-          // Get the first non-internal IPv4 address
-          if (data.addresses && data.addresses.length > 0) {
-            const ips = data.addresses.map(a => a.address).join(', ');
-            setDeviceIp(ips);
+          setLocalServerConnected(true);
+
+          console.log('Local server health check:', data);
+
+          if (data.network_interfaces && data.network_interfaces.length > 0) {
+            // Format: "[ETH] eth0: 192.168.1.100"
+            const formattedIps = data.network_interfaces.map(iface => {
+              const typeLabel = iface.type === 'ethernet' ? 'ETH' :
+                               iface.type === 'wifi' ? 'WiFi' : 'NET';
+              return `[${typeLabel}] ${iface.interface}: ${iface.address}`;
+            }).join('\n');
+            setDeviceIp(formattedIps);
           } else {
-            setDeviceIp('No network');
+            setDeviceIp('No network interfaces found');
           }
+        } else {
+          setLocalServerConnected(false);
+          setDeviceIp('Could not be found');
         }
       } catch (err) {
-        console.error('Failed to fetch device IP:', err);
-        setDeviceIp('Unavailable');
+        console.error('Failed to connect to local server:', err);
+        setLocalServerConnected(false);
+        setDeviceIp('Could not be found');
       }
     };
-    fetchDeviceIp();
+
+    fetchLocalServerInfo();
   }, []);
 
   // Keep ref updated
@@ -156,9 +171,9 @@ const KioskConnect = ({ onConnect }) => {
           setStatus('activated');
           clearInterval(pollIntervalRef.current);
 
-          // Notify parent component
+          // Notify parent component with poll interval config
           if (onConnectRef.current) {
-            onConnectRef.current();
+            onConnectRef.current({ pollInterval });
           }
         }
       } catch (err) {
@@ -205,12 +220,43 @@ const KioskConnect = ({ onConnect }) => {
               <span className="kiosk-id-value">{kioskId}</span>
             </div>
 
+            {/* Local server connection status */}
+            <div className="kiosk-debug-info">
+              <span className="kiosk-debug-label">Local Server:</span>
+              <span className={`kiosk-debug-value ${localServerConnected ? 'connected' : 'disconnected'}`}>
+                {localServerConnected ? '✓ Connected' : '✗ Disconnected'}
+              </span>
+            </div>
+
+            {/* Device IP address */}
             {deviceIp && (
               <div className="kiosk-debug-info">
-                <span className="kiosk-debug-label">Device IP:</span>
-                <span className="kiosk-debug-value">{deviceIp}</span>
+                <div className="kiosk-debug-label">Kiosk IP:</div>
+                <div className="kiosk-debug-value kiosk-ip-list">
+                  {deviceIp.split('\n').map((line, idx) => (
+                    <div key={idx} className="kiosk-ip-entry">{line}</div>
+                  ))}
+                </div>
               </div>
             )}
+
+            <div className="kiosk-config">
+              <label className="kiosk-config-label">
+                Poll Interval (ms):
+                <input
+                  type="number"
+                  className="kiosk-config-input"
+                  value={pollInterval}
+                  onChange={(e) => setPollInterval(parseInt(e.target.value, 10) || 200)}
+                  min="50"
+                  max="5000"
+                  step="50"
+                />
+              </label>
+              <span className="kiosk-config-hint">
+                {pollInterval < 100 ? '⚡ Very Fast' : pollInterval <= 300 ? '🔄 Fast' : pollInterval <= 1000 ? '⏱️ Normal' : '🐢 Slow'} ({Math.round(1000 / pollInterval * 10) / 10} Hz)
+              </span>
+            </div>
           </div>
         )}
 

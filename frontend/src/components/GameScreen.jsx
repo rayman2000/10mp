@@ -48,6 +48,8 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false); // Ref to avoid recreating captureTurnData callback
   const [turnStartTime, setTurnStartTime] = useState(null); // Set when timer actually starts
+  const [snapshots, setSnapshots] = useState([]); // Store snapshots collected during turn
+  const [snapshotSequence, setSnapshotSequence] = useState(0); // Sequence counter for snapshots
   const {
     isLoaded,
     isRunning,
@@ -56,8 +58,10 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
     saveGame,
     loadGame,
     scrapeData,
+    scrapeSnapshotData,
     simulateKeyPress,
-    getRandomAttractButton
+    getRandomAttractButton,
+    setGameStateInterval
   } = useEmulator(config, approved);
 
   // Function to capture turn data (but not send yet - will be sent with message)
@@ -95,10 +99,12 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
         money: gameData?.money || 0,
         partyData: gameData?.party || [],
         turnDuration,
-        saveState: saveState || null
+        saveState: saveState || null,
+        snapshots: snapshots // Include collected snapshots
       };
 
       console.log('Turn data captured (will be sent with message):', turnData);
+      console.log(`Captured ${snapshots.length} snapshots during turn`);
 
       // Pass the captured data to parent instead of sending to API
       if (onTurnDataCaptured) {
@@ -110,7 +116,100 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
       isSavingRef.current = false;
       setIsSaving(false);
     }
-  }, [player, turnStartTime, config, saveGame, scrapeData, onTurnDataCaptured]);
+  }, [player, turnStartTime, config, saveGame, scrapeData, onTurnDataCaptured, snapshots]);
+
+  // Function to capture a snapshot
+  const captureSnapshot = useCallback(async () => {
+    if (!isActive) return;
+
+    try {
+      const snapshotData = await scrapeSnapshotData();
+
+      if (!snapshotData) {
+        console.warn('No snapshot data available');
+        return;
+      }
+
+      // Add snapshot to collection with sequence number and timestamp
+      // Use functional updates to avoid depending on current state values
+      setSnapshots(prev => {
+        const newSnapshot = {
+          ...snapshotData,
+          sequenceNumber: prev.length, // Use array length as sequence
+          capturedAt: new Date().toISOString()
+        };
+        console.log(`Snapshot #${prev.length} captured`);
+        return [...prev, newSnapshot];
+      });
+    } catch (error) {
+      console.error('Error capturing snapshot:', error);
+    }
+  }, [isActive, scrapeSnapshotData]);
+
+  // Capture snapshots every 30 seconds during active turn
+  useEffect(() => {
+    if (!isActive) {
+      // Reset snapshots when turn becomes inactive
+      setSnapshots([]);
+      setSnapshotSequence(0);
+      return;
+    }
+
+    let isMounted = true;
+    let intervalId = null;
+    let retryTimeoutId = null;
+
+    // Validate that game has started before capturing snapshots
+    // This prevents debug logs before player enters their name
+    const validateAndCapture = async () => {
+      if (!isMounted) return;
+
+      try {
+        const testData = await scrapeSnapshotData();
+        if (!testData) {
+          // Game not ready yet, retry after delay
+          if (isMounted) {
+            retryTimeoutId = setTimeout(validateAndCapture, 2000);
+          }
+          return;
+        }
+
+        // Game is ready, capture initial snapshot
+        if (isMounted) {
+          captureSnapshot();
+
+          // Then capture every 30 seconds
+          intervalId = setInterval(captureSnapshot, 30000);
+        }
+      } catch (error) {
+        console.warn('Snapshot validation failed, retrying...', error);
+        if (isMounted) {
+          retryTimeoutId = setTimeout(validateAndCapture, 2000);
+        }
+      }
+    };
+
+    // Start validation process
+    validateAndCapture();
+
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      if (retryTimeoutId) {
+        clearTimeout(retryTimeoutId);
+      }
+    };
+  }, [isActive, captureSnapshot, scrapeSnapshotData]);
+
+  // Configure game state polling interval from config
+  useEffect(() => {
+    if (!isLoaded || !config?.gameStatePollInterval) return;
+
+    console.log(`⚙️ Configuring game state poll interval: ${config.gameStatePollInterval}ms`);
+    setGameStateInterval(config.gameStatePollInterval);
+  }, [isLoaded, config?.gameStatePollInterval, setGameStateInterval]);
 
   // Track if we've loaded the save for initial attract mode
   const initialSaveLoadedRef = useRef(false);
@@ -171,47 +270,77 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
     }
   }, [isActive]);
 
-  // Focus emulator when becoming active - use MutationObserver instead of polling
+  // Aggressive focus management for emulator canvas
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
-    const focusCanvas = (canvas) => {
-      canvas.focus();
-      canvas.click();
+    const focusCanvas = () => {
+      const canvas = containerRef.current?.querySelector('canvas');
+      if (canvas && document.activeElement !== canvas) {
+        canvas.focus();
+        canvas.click();
+      }
     };
 
-    // Check if canvas already exists
+    // Check if canvas already exists and focus it
     const existingCanvas = containerRef.current.querySelector('canvas');
     if (existingCanvas) {
-      focusCanvas(existingCanvas);
-      return;
+      // Multiple focus attempts with delays
+      focusCanvas();
+      const timer1 = setTimeout(focusCanvas, 100);
+      const timer2 = setTimeout(focusCanvas, 300);
+      const timer3 = setTimeout(focusCanvas, 600);
+
+      // Refocus on click anywhere in the container
+      const handleClick = () => focusCanvas();
+      containerRef.current.addEventListener('click', handleClick);
+
+      // Periodic refocus to maintain focus during gameplay
+      const refocusInterval = setInterval(focusCanvas, 3000);
+
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+        clearInterval(refocusInterval);
+        containerRef.current?.removeEventListener('click', handleClick);
+      };
     }
 
-    // Use MutationObserver to detect when canvas is added (more efficient than polling)
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeName === 'CANVAS') {
-            focusCanvas(node);
-            observer.disconnect();
-            return;
-          }
-          // Check if canvas is nested inside added node
-          if (node.querySelector) {
-            const canvas = node.querySelector('canvas');
-            if (canvas) {
-              focusCanvas(canvas);
-              observer.disconnect();
-              return;
-            }
-          }
-        }
+    // Use MutationObserver to detect when canvas is added
+    const observer = new MutationObserver(() => {
+      const canvas = containerRef.current?.querySelector('canvas');
+      if (canvas) {
+        // Multiple focus attempts after canvas appears
+        focusCanvas();
+        setTimeout(focusCanvas, 100);
+        setTimeout(focusCanvas, 300);
+        setTimeout(focusCanvas, 600);
+
+        // Set up click handler and periodic refocus
+        const handleClick = () => focusCanvas();
+        containerRef.current?.addEventListener('click', handleClick);
+        const refocusInterval = setInterval(focusCanvas, 3000);
+
+        // Cleanup when component unmounts
+        observer.disconnect();
+
+        // Store cleanup in a ref to be called on unmount
+        const cleanup = () => {
+          clearInterval(refocusInterval);
+          containerRef.current?.removeEventListener('click', handleClick);
+        };
+        // We'll rely on the main useEffect cleanup for this
+        observer.cleanup = cleanup;
       }
     });
 
     observer.observe(containerRef.current, { childList: true, subtree: true });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      observer.cleanup?.();
+    };
   }, [isActive]);
 
   // Use refs to store callbacks and config so timer is independent of renders
