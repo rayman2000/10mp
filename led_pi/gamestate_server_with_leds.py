@@ -854,7 +854,6 @@ async def health_check():
 
     return {
         "status": "healthy",
-        "led_status": "active" if LED_AVAILABLE and not led_controller.mock_mode else "mock",
         "timestamp": datetime.now().isoformat(),
         "network_interfaces": interfaces,
         "hostname": socket.gethostname()
@@ -873,4 +872,4 @@ if __name__ == "__main__":
     ║  💡 Analog RGB: GPIO 16, 20, 21     | Status: {HARDWARE_STATUS['analog']!s:<5}            ║
     ╚════════════════════════════════════════════════════════════════════╝
     """)
-    uvicorn.run(app, host="127.0.0.1", port=3333, log_level="error")
+    uvicorn.run(app, host="127.0.0.1", port=3333, log_level="info")
