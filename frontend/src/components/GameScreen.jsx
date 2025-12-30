@@ -270,47 +270,77 @@ const GameScreen = memo(({ player, isActive = true, approved = false, onGameEnd,
     }
   }, [isActive]);
 
-  // Focus emulator when becoming active - use MutationObserver instead of polling
+  // Aggressive focus management for emulator canvas
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
-    const focusCanvas = (canvas) => {
-      canvas.focus();
-      canvas.click();
+    const focusCanvas = () => {
+      const canvas = containerRef.current?.querySelector('canvas');
+      if (canvas && document.activeElement !== canvas) {
+        canvas.focus();
+        canvas.click();
+      }
     };
 
-    // Check if canvas already exists
+    // Check if canvas already exists and focus it
     const existingCanvas = containerRef.current.querySelector('canvas');
     if (existingCanvas) {
-      focusCanvas(existingCanvas);
-      return;
+      // Multiple focus attempts with delays
+      focusCanvas();
+      const timer1 = setTimeout(focusCanvas, 100);
+      const timer2 = setTimeout(focusCanvas, 300);
+      const timer3 = setTimeout(focusCanvas, 600);
+
+      // Refocus on click anywhere in the container
+      const handleClick = () => focusCanvas();
+      containerRef.current.addEventListener('click', handleClick);
+
+      // Periodic refocus to maintain focus during gameplay
+      const refocusInterval = setInterval(focusCanvas, 3000);
+
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+        clearInterval(refocusInterval);
+        containerRef.current?.removeEventListener('click', handleClick);
+      };
     }
 
-    // Use MutationObserver to detect when canvas is added (more efficient than polling)
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeName === 'CANVAS') {
-            focusCanvas(node);
-            observer.disconnect();
-            return;
-          }
-          // Check if canvas is nested inside added node
-          if (node.querySelector) {
-            const canvas = node.querySelector('canvas');
-            if (canvas) {
-              focusCanvas(canvas);
-              observer.disconnect();
-              return;
-            }
-          }
-        }
+    // Use MutationObserver to detect when canvas is added
+    const observer = new MutationObserver(() => {
+      const canvas = containerRef.current?.querySelector('canvas');
+      if (canvas) {
+        // Multiple focus attempts after canvas appears
+        focusCanvas();
+        setTimeout(focusCanvas, 100);
+        setTimeout(focusCanvas, 300);
+        setTimeout(focusCanvas, 600);
+
+        // Set up click handler and periodic refocus
+        const handleClick = () => focusCanvas();
+        containerRef.current?.addEventListener('click', handleClick);
+        const refocusInterval = setInterval(focusCanvas, 3000);
+
+        // Cleanup when component unmounts
+        observer.disconnect();
+
+        // Store cleanup in a ref to be called on unmount
+        const cleanup = () => {
+          clearInterval(refocusInterval);
+          containerRef.current?.removeEventListener('click', handleClick);
+        };
+        // We'll rely on the main useEffect cleanup for this
+        observer.cleanup = cleanup;
       }
     });
 
     observer.observe(containerRef.current, { childList: true, subtree: true });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      observer.cleanup?.();
+    };
   }, [isActive]);
 
   // Use refs to store callbacks and config so timer is independent of renders

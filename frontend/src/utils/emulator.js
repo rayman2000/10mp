@@ -48,8 +48,8 @@ class EmulatorManager {
 
   // Record game state event for external server (if enabled)
   _recordEvent(type, data = {}) {
-    // PERFORMANCE: Early exit if disabled (single boolean check)
-    if (!this._gameStateConfig.enabled) return;
+    // ALWAYS record events locally regardless of LED server status
+    // The LED server check happens in sendGameStateUpdate()
 
     // SAFETY: Prevent memory leak from unbounded array growth
     if (this._pendingEvents.length >= 100) {
@@ -61,6 +61,11 @@ class EmulatorManager {
       timestamp: new Date().toISOString(),
       data
     });
+
+    // Log events for debugging (only in development or when server is offline)
+    if (!this._gameStateConfig.enabled && import.meta.env.DEV) {
+      console.log(`📝 Event recorded (not sent to LED server): ${type}`, data);
+    }
   }
 
   /**
@@ -90,7 +95,7 @@ class EmulatorManager {
       this._gameStateConfig.enabled = false;
       this._gameStateServerAvailable = false;
       console.log(`🌐 Game State Server: Not detected (localhost:${this._gameStateConfig.port})`);
-      console.log(`   → LED integration disabled`);
+      console.log(`   → Events will be recorded locally but not sent to LED server`);
       return false;
     }
   }
@@ -2414,8 +2419,19 @@ class EmulatorManager {
                   maxHp: pokemon.maxHP
                 });
               } else {
-                // Check for species change
-                if (pokemon.species !== lastPokemon.species || pokemon.nickname !== lastPokemon.nickname) {
+                // Check for Pokemon change using PID (more reliable than species name)
+                // PID is unique per Pokemon and doesn't require decryption
+                const currentPid = pokemon.pid;
+                const lastPid = lastPokemon.pid;
+
+                // Debug logging for PID comparison
+                if (currentPid !== lastPid) {
+                  console.log(`🔍 PID change detected at position ${i}:`);
+                  console.log(`  Last: ${lastPid} (${lastPokemon.species || lastPokemon.nickname || 'Unknown'})`);
+                  console.log(`  Current: ${currentPid} (${pokemon.species || pokemon.nickname || 'Unknown'})`);
+                }
+
+                if (currentPid !== lastPid) {
                   hasChange = true;
                   hasSignificantChange = true;
                   const pokemonName = pokemon.species || pokemon.nickname || 'Unknown';
@@ -2513,8 +2529,19 @@ class EmulatorManager {
   // NOTE: This sends delta events PLUS current state snapshot for context
   // For turn history snapshots, see scrapeSnapshotData() (saved to database)
   async sendGameStateUpdate() {
-    // PERFORMANCE: Early exit if not enabled or server not available
-    if (!this._gameStateConfig.enabled || !this._gameStateServerAvailable) return;
+    // If server not available, just do cleanup to prevent memory leaks
+    if (!this._gameStateConfig.enabled || !this._gameStateServerAvailable) {
+      // SAFETY: Prevent memory leak - clear events older than buffer limit
+      if (this._pendingEvents.length > 200) {
+        const eventsToKeep = 100;
+        const eventsDropped = this._pendingEvents.length - eventsToKeep;
+        this._pendingEvents = this._pendingEvents.slice(-eventsToKeep);
+        if (import.meta.env.DEV) {
+          console.warn(`📝 Event buffer cleanup: dropped ${eventsDropped} old events (server not available)`);
+        }
+      }
+      return;
+    }
 
     // PERFORMANCE: Early exit if no events to send
     if (this._pendingEvents.length === 0) return;
@@ -2542,9 +2569,10 @@ class EmulatorManager {
       };
 
       // Build payload - delta events + current state
+      // NOTE: Create a copy of events, don't clear original array yet
       const payload = {
         timestamp: new Date().toISOString(),
-        events: this._pendingEvents.splice(0), // Empty the array
+        events: [...this._pendingEvents], // Copy events, don't remove yet
         currentState
       };
 
@@ -2562,19 +2590,30 @@ class EmulatorManager {
 
       if (!response.ok) {
         console.warn(`Game state server returned ${response.status}`);
+        // Don't clear events on error - they'll be retried next interval
       } else {
+        // SUCCESS: Clear events only after successful send
+        this._pendingEvents = [];
         // Reset offline flag on successful send
         this._gameStateServerOffline = false;
+        // Log successful send in development
+        if (import.meta.env.DEV) {
+          console.log(`✅ Sent ${payload.events.length} events to LED server`);
+        }
       }
     } catch (error) {
       // Silently fail if server is offline - don't spam console
       // Only log on first failure
       if (!this._gameStateServerOffline) {
-        console.warn(`Game state server not responding at localhost:${this._gameStateConfig.port} - further errors will be suppressed`);
+        console.warn(`Game state server not responding at localhost:${this._gameStateConfig.port} - events will be recorded locally but not sent`);
         this._gameStateServerOffline = true;
       }
-      // SAFETY: Clear pending events to prevent memory leak
-      this._pendingEvents = [];
+      // Keep events in buffer for retry on next interval
+      // But cap to prevent memory leak
+      if (this._pendingEvents.length > 200) {
+        console.warn('Event buffer too large, clearing oldest events');
+        this._pendingEvents = this._pendingEvents.slice(-100);
+      }
     }
   }
 
@@ -2587,12 +2626,18 @@ class EmulatorManager {
       this.pollStateChanges();
     }, 1000); // Poll every 1 second
 
-    // Start game state server updates if detected and enabled
+    // ALWAYS start the game state interval to handle event sending and cleanup
+    // Even if server is not available, we need to prevent memory leaks
+    console.log(`🌐 Starting game state event management`);
+    this._gameStateInterval = setInterval(() => {
+      this.sendGameStateUpdate();
+    }, this._gameStateConfig.interval);
+
+    // Log server status
     if (this._gameStateConfig.enabled && this._gameStateServerAvailable) {
-      console.log(`🌐 Starting game state updates to localhost:${this._gameStateConfig.port}`);
-      this._gameStateInterval = setInterval(() => {
-        this.sendGameStateUpdate();
-      }, this._gameStateConfig.interval);
+      console.log(`   → LED server detected, events will be sent to localhost:${this._gameStateConfig.port}`);
+    } else {
+      console.log(`   → LED server not available, events logged locally only`);
     }
   }
 
