@@ -6,6 +6,7 @@ import badgeSvg from '../badge.svg';
 const MessageInput = memo(({ player, pendingTurnData, onMessageSubmit }) => {
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const textareaRef = useRef(null);
 
   // Focus textarea on mount with a delay to override emulator focus
@@ -24,6 +25,7 @@ const MessageInput = memo(({ player, pendingTurnData, onMessageSubmit }) => {
 
     const finalMessage = message.trim() || `${player} played their turn!`;
     setIsSubmitting(true);
+    setSaveError(false); // Clear any previous error when retrying
 
     try {
       // Save turn data with message to backend
@@ -42,8 +44,8 @@ const MessageInput = memo(({ player, pendingTurnData, onMessageSubmit }) => {
       onMessageSubmit(finalMessage);
     } catch (error) {
       console.error('Failed to save turn data:', error);
-      // Still proceed to next screen even if save fails
-      onMessageSubmit(finalMessage);
+      // Don't proceed to next screen - show error and allow retry
+      setSaveError(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -75,8 +77,13 @@ const MessageInput = memo(({ player, pendingTurnData, onMessageSubmit }) => {
           <div className="char-counter">
             {message.length}/200 characters
           </div>
+          {saveError && (
+            <div className="save-error">
+              Failed to save your turn. Please check the internet connection and try again.
+            </div>
+          )}
           <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Submit & Pass Turn'}
+            {isSubmitting ? 'Saving...' : saveError ? 'Retry Save' : 'Submit & Pass Turn'}
           </button>
         </form>
       </div>
