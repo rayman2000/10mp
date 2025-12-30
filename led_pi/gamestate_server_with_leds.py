@@ -101,7 +101,7 @@ TYPE_COLORS = {
 # Condensed Pokemon Mapping (Truncated for brevity, logic remains valid)
 # The full list from your original code should be here.
 POKEMON_TYPES = {
-    "bulbasaur": "grass", 
+    "bulbasaur": "grass",
     "ivysaur": "grass",
     "venusaur": "grass",
     "charmander": "fire",
@@ -294,7 +294,7 @@ def get_location_colors(location_name):
     if not location_name:
         return LOCATION_COLORS["unknown"]
     name = location_name.lower().strip()
-    
+
     if name in LOCATION_COLORS:
         return LOCATION_COLORS[name]
 
@@ -305,7 +305,7 @@ def get_location_colors(location_name):
             if n in [19, 20, 21]: return LOCATION_COLORS["route water"]
             elif n in [3, 4, 9, 10, 23]: return LOCATION_COLORS["route mountain"]
         return LOCATION_COLORS["route generic"]
-    
+
     return LOCATION_COLORS["unknown"]
 
 def get_pokemon_type(pokemon_name):
@@ -326,7 +326,7 @@ class LedController:
         self.current_state = "IDLE"
         self.state_data = {}
         self.last_enemy_type = "normal"
-        
+
         # --- Initialize NeoPixel (RGBIC) ---
         self.pixels = None
         if HARDWARE_STATUS["neopixel"] and LED_PIN_NEO:
@@ -367,8 +367,8 @@ class LedController:
             bf = (b / 255.0) * brightness
             # Clip to 0-1
             self.analog_strip.color = (
-                max(0.0, min(1.0, rf)), 
-                max(0.0, min(1.0, gf)), 
+                max(0.0, min(1.0, rf)),
+                max(0.0, min(1.0, gf)),
                 max(0.0, min(1.0, bf))
             )
 
@@ -416,10 +416,10 @@ class LedController:
                     self._anim_levelup()
 
                 elif self.current_state == "IDLE":
-                    if self.pixels: 
+                    if self.pixels:
                         self.pixels.fill(COLOR_OFF)
                         self.pixels.show()
-                    if self.analog_strip: 
+                    if self.analog_strip:
                         self.analog_strip.off()
                     time.sleep(0.1)
 
@@ -434,7 +434,7 @@ class LedController:
         offset = 0.0
         step_size = 0.15
         wave_density = 0.6
-        
+
         # Determine a primary color for the analog strip to breathe
         primary_color = colors[0] if colors else (100, 100, 100)
 
@@ -449,7 +449,7 @@ class LedController:
             t = time.time() * 1.5
             analog_brightness = (math.sin(t) + 1) / 2  # 0.0 to 1.0
             analog_brightness = 0.3 + (0.7 * analog_brightness) # floor at 30% brightness
-            
+
             self.set_analog_color(primary_color[0], primary_color[1], primary_color[2], analog_brightness)
 
             # 2. NeoPixel Wave Logic
@@ -458,7 +458,7 @@ class LedController:
                     theta = (i * wave_density) + offset
                     val = math.sin(theta)
                     brightness = ((val + 1) / 2.0) ** 3
-                    
+
                     block_idx = int((theta + math.pi/2) / (2 * math.pi)) % 3
                     base_color = current_colors[block_idx]
 
@@ -480,7 +480,7 @@ class LedController:
                 self.pixels.fill((100, 150, 150))
                 self.pixels.show()
             self.set_analog_color(255, 255, 255, 1.0)
-            
+
             time.sleep(0.15)
 
             # Flash OFF
@@ -488,7 +488,7 @@ class LedController:
                 self.pixels.fill(COLOR_OFF)
                 self.pixels.show()
             self.set_analog_color(0, 0, 0)
-            
+
             time.sleep(0.15)
 
             # Random Noise / Chaos Color
@@ -498,10 +498,10 @@ class LedController:
                 for i in range(LED_COUNT):
                     self.pixels[i] = (r_chaos, g_chaos, 0)
                 self.pixels.show()
-            
+
             # Analog matches the chaos color
             self.set_analog_color(r_chaos, g_chaos, 0, 1.0)
-            
+
             time.sleep(0.15)
 
     def _anim_fighting(self, pokemon_type):
@@ -524,7 +524,7 @@ class LedController:
             if self.pixels:
                 self.pixels.fill(current_color)
                 self.pixels.show()
-            
+
             # Update Analog (Use the same factor)
             self.set_analog_color(base_color[0], base_color[1], base_color[2], factor)
 
@@ -538,7 +538,7 @@ class LedController:
 
         # 1. Retract (Old Color)
         self.set_analog_color(c_old[0], c_old[1], c_old[2], 0.5)
-        
+
         if self.pixels:
             self.pixels.fill(c_old)
             for i in range(center):
@@ -586,7 +586,7 @@ class LedController:
                 self.pixels.show()
             self.set_analog_color(255, 0, 0, 1.0)
             time.sleep(0.1)
-            
+
             if self.pixels:
                 self.pixels.fill((50, 0, 0))
                 self.pixels.show()
@@ -615,7 +615,7 @@ class LedController:
                     pixel_index = (i * 256 // LED_COUNT) + j
                     self.pixels[i] = wheel(pixel_index & 255)
                 self.pixels.show()
-            
+
             j += 3
             time.sleep(0.002)
 
@@ -754,7 +754,7 @@ class EventHandler:
         print(f"\n{'='*60}")
         print(f"📦 {len(payload.events)} event(s) at {payload.timestamp}")
         print(f"📍 {payload.currentState.location} | Battle: {payload.currentState.inBattle}")
-        
+
         # Determine priority event (e.g. battle start overrides hp change)
         # For simplicity, we process in order, knowing logic handles state transitions
         for event in payload.events:
@@ -800,6 +800,64 @@ async def root():
         "hardware": HARDWARE_STATUS,
         "analog_pins": {"R": PIN_RED, "G": PIN_GREEN, "B": PIN_BLUE},
         "version": "2.1.0"
+    }
+
+def get_local_interfaces():
+    """Get local network interfaces (Ethernet and WiFi)"""
+    interfaces = []
+
+    # Get all network interfaces
+    try:
+        import netifaces
+        for iface in netifaces.interfaces():
+            # Skip loopback and virtual interfaces
+            if iface in ['lo', 'docker0'] or iface.startswith(('br-', 'veth', 'virbr')):
+                continue
+
+            addrs = netifaces.ifaddresses(iface)
+            if netifaces.AF_INET in addrs:
+                for addr_info in addrs[netifaces.AF_INET]:
+                    ip = addr_info.get('addr')
+                    if ip and ip != '127.0.0.1':
+                        # Determine interface type
+                        iface_type = 'ethernet' if iface.startswith(('eth', 'en', 'em')) else \
+                                     'wifi' if iface.startswith(('wlan', 'wl')) else 'other'
+                        interfaces.append({
+                            'interface': iface,
+                            'address': ip,
+                            'type': iface_type
+                        })
+    except ImportError:
+        # Fallback: use socket to get primary IP (less detailed)
+        try:
+            # Connect to external IP to determine local interface IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            s.close()
+            if ip and ip != '127.0.0.1':
+                interfaces.append({
+                    'interface': 'primary',
+                    'address': ip,
+                    'type': 'unknown'
+                })
+        except Exception:
+            pass
+
+    return interfaces
+
+
+@app.get("/health")
+async def health_check():
+    """Health check with local network interface information"""
+    interfaces = get_local_interfaces()
+
+    return {
+        "status": "healthy",
+        "led_status": "active" if LED_AVAILABLE and not led_controller.mock_mode else "mock",
+        "timestamp": datetime.now().isoformat(),
+        "network_interfaces": interfaces,
+        "hostname": socket.gethostname()
     }
 
 @app.on_event("shutdown")
